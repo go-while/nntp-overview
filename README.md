@@ -6,15 +6,15 @@ Generation is done in a concurrent way and files are mmap'ed while open.
 
 Overview file content is human readable based on [RFC overview.FMT](https://datatracker.ietf.org/doc/html/rfc2980#section-2.1.7)
 ```
-    "MSG_NUM:",     // MSG_NUM field is not present in output to overview.FMT command but when requesting XOVER we output it
-    "Subject:",
-    "From:",
-    "Date:",
-    "Message-ID:",
-    "References:",
-    "Bytes:",
-    "Lines:",
-    "Xref:full",
+	"MSG_NUM:",     // MSG_NUM field is not present in output to overview.FMT command but when requesting XOVER we output it
+	"Subject:",
+	"From:",
+	"Date:",
+	"Message-ID:",
+	"References:",
+	"Bytes:",
+	"Lines:",
+	"Xref:full",
 ```
 
 ## OV_Handler
@@ -30,8 +30,8 @@ When integrated into a usenet server: works as a central message numbering stati
 
 ```
 import (
-    "github.com/go-while/go-utils"
-    "github.com/go-while/nntp-overview"
+	"github.com/go-while/go-utils"
+	"github.com/go-while/nntp-overview"
 )
 ```
 
@@ -42,7 +42,7 @@ Example integration in repo: [nntp-overview_test](https://github.com/go-while/nn
 
 Pull requests are welcome.
 
-For major changes, please open an issue first to discuss what you would like to change or fork it and go your way ;)
+For major changes, please open an issue first to discuss what you would like to change.
 
 ## License
 
