@@ -1566,7 +1566,7 @@ func Create_ov(File_path string, hash string, pages int) error {
 	}
 	wbt += wb
 
-	if wb, err = init_file(File_path, ov_body, false); err == nil {
+	if wb, err = init_file(File_path, ov_body, false); err != nil {
 		log.Printf("ERROR Create_ov init_file ov_body fp='%s' err='%v'", File_path, err)
 		return err
 	}
