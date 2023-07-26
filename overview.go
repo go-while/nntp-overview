@@ -277,6 +277,7 @@ func (ov *OV) Load_Overview(maxworkers int, max_queue_size int, max_open_mmaps i
 func Watch_overview_Workers(maxworkers int) {
 	// run Watch_overview_Workers() whenever you're done feeding, before closing your app
 	logstr := ""
+	closed_Overview_OVIC := false
 forever:
 	for {
 		time.Sleep(1 * time.Second)
@@ -293,13 +294,20 @@ forever:
 		all_ov_workers_done := workers_done == maxworkers    // bool
 		logstr = fmt.Sprintf("workers_done=%d/%d open_overviews=%d queued_overviews=%d wc_head_chan=%d wc_body_chan=%d rc_head_chan=%d rc_body_chan=%d cache_history=%d xrefs=%d", workers_done, maxworkers, open_overviews, queued_overviews, wc_head_chan, wc_body_chan, rc_head_chan, rc_body_chan, cache_history ,xrefs)
 
+
+
 		// check if everything is empty
-		if all_ov_workers_done &&
-			open_overviews == 0 && queued_overviews == 0 &&
+		if open_overviews == 0 && queued_overviews == 0 &&
 			wc_head_chan == 0 && wc_body_chan == 0 &&
 			rc_head_chan == 0 && rc_body_chan == 0 &&
 			cache_history == 0 && xrefs == 0 {
-			break forever
+				if !closed_Overview_OVIC {
+					close(Overview.OVIC)
+					closed_Overview_OVIC = true
+				}
+				if all_ov_workers_done {
+					break forever
+				}
 		}
 		log.Printf("WAIT Watch_overview_Workers %s", logstr)
 	}
@@ -399,7 +407,7 @@ func (ov *OV) di_ov(ovl OVL) []ReturnChannelData {
 
 			} // end select
 			i++
-			if i >= len(retchans)-1 {
+			if i >= len(retchans) {
 				break
 			}
 		} // end for
@@ -847,6 +855,18 @@ func Cleanup_NewsGroups_String(newsgroup string) string {
 	}
 
 	/*
+	// checking newsgroup compontents
+	components := strings.Split(newsgroup, ".")
+	for _, comp := range components {
+		if utils.IsDigit(comp) {
+			// component must not contain only numbers, causes issues with inn2 tradspool?storage??
+			// why is this our problem? our spool doesn't have this problem.
+			return ""
+		}
+	}
+	*/
+
+	/*
 		forever_chars:
 		for {
 			check:
@@ -960,9 +980,16 @@ func IsValidGroupName(group string) bool {
 		return false
 	}
 
-	for _, r := range group[:0] { // first char of group has to be a letter or digit
-		if unicode.IsUpper(r) || r == 0 || !unicode.IsLetter(r) || !unicode.IsDigit(r) {
-			log.Printf("!IsValidGroupName #1 group='%s' r=x'%x'", group, string(r))
+	// first char of group has to be a letter or digit and not uppercase
+	for i, r := range group[:1] {
+
+		if unicode.IsUpper(r) {
+			log.Printf("!IsValidGroupName IsUpper i=%d group='%s'", i, group)
+			return false
+		}
+
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			log.Printf("!IsValidGroupName !IsLetter !IsDigit i=%d group='%s'", i, group)
 			return false
 		}
 	}
