@@ -1589,9 +1589,7 @@ func Grow_ov(ovfh OVFH, pages int, blocksize string, mode int) (OVFH, error) {
 	var header string
 	var footer string
 	var wbt int
-	if !utils.FileExists(ovfh.File_path) {
-		return ovfh, fmt.Errorf("ERROR Grow_ov !exists ovfh.fp='%s'", ovfh.File_path)
-	}
+
 	if DEBUG_OV {
 		log.Printf("Grow_ov pages=%d bs=%s fp='%s'", pages, blocksize, ovfh.File_path)
 	}
