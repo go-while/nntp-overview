@@ -1427,8 +1427,7 @@ func Write_ov(ovfh OVFH, data string, is_head bool, is_foot bool, grow bool) (OV
 		ovfh.Findex = OV_RESERVE_BEG
 	}
 
-	//
-	if mmap_size != ovfh.Mmap_size {
+	if mmap_size != ovfh.Mmap_size { // unsure if this could change while mapped we have serious trouble
 		return OVFH{}, fmt.Errorf("ERROR Write_ov len(ovfh.Mmap_handle)=%d != ovfh.Mmap_size=%d fp='%s'", mmap_size, ovfh.Mmap_size, ovfh.File_path), ""
 	}
 
@@ -1436,6 +1435,7 @@ func Write_ov(ovfh OVFH, data string, is_head bool, is_foot bool, grow bool) (OV
 		return OVFH{}, fmt.Errorf("ERROR Write_ov ovfh.Mmap_size=%d fp='%s'", ovfh.Mmap_size, ovfh.File_path), ""
 	}
 
+	// total bodyspace of overview file
 	bodyspace := ovfh.Mmap_size - OV_RESERVE_BEG - OV_RESERVE_END
 	if bodyspace <= 0 {
 		return ovfh, fmt.Errorf("ERROR Write_ov bodyspace=%d fp='%s'", bodyspace, ovfh.File_path), ""
@@ -1444,9 +1444,8 @@ func Write_ov(ovfh OVFH, data string, is_head bool, is_foot bool, grow bool) (OV
 	// dont count OV_RESERVE_BEG here as it is already included in Findex
 	bodyend := ovfh.Mmap_range - OV_RESERVE_END
 	freespace := bodyend - ovfh.Findex
-	//freespace := ovfh.Mmap_range - ovfh.Findex - OV_RESERVE_END
-	// newsize adds len of data to Findex
-	// then newsize should not be higher than freespace
+	// newbodysize adds len of data to Findex
+	// then newbodysize should not be higher than freespace
 	newbodysize := len_data + ovfh.Findex
 
 	if DEBUG_OV {
@@ -1490,7 +1489,7 @@ func Write_ov(ovfh OVFH, data string, is_head bool, is_foot bool, grow bool) (OV
 			ovfh.Mmap_handle[startindex] = abyte
 			startindex++
 		}
-		ovfh.Written += len(databyte)
+		ovfh.Written += len_data
 
 	} else if !is_head && !is_foot && data != "" { // write data
 
@@ -1511,7 +1510,7 @@ func Write_ov(ovfh OVFH, data string, is_head bool, is_foot bool, grow bool) (OV
 			ovfh.Mmap_handle[ovfh.Findex] = abyte
 			ovfh.Findex++
 		}
-		ovfh.Written += len(databyte)
+		ovfh.Written += len_data
 
 	} // !is_head && ! is_foot
 	return ovfh, nil, ""
@@ -1559,22 +1558,29 @@ func Create_ov(File_path string, hash string, pages int) error {
 	ov_body := zerofill_block(pages, "1K") // initial max of overview data, will grow when needed
 	ov_footer := zerofill(foot_str, OV_RESERVE_END)
 
-	//wb, wbt := 0, 0 // written bytes
-	if _, err = init_file(File_path, ov_header, false); err == nil {
-		//wbt += wb
-		if _, err = init_file(File_path, ov_body, false); err == nil {
-			//wbt += wb
-			//ov_footer := construct_footer(ovfh, wbt)
-			if _, err = init_file(File_path, ov_footer, false); err == nil {
-				//wbt += wb
-				// WORK_HERE
-				//if DEBUG_OV { log.Printf("Create_ov OK fp='%s' wbt=%d", File_path, wbt) }
-				return nil
-			}
-		}
+	wb, wbt := 0, 0 // debugs written bytes
+
+	if wb, err = init_file(File_path, ov_header, false); err != nil {
+		log.Printf("ERROR Create_ov init_file ov_header fp='%s' err='%v'", File_path, err)
+		return err
 	}
-	log.Printf("ERROR Create_ov fp='%s'", File_path)
-	return err
+	wbt += wb
+
+	if wb, err = init_file(File_path, ov_body, false); err == nil {
+		log.Printf("ERROR Create_ov init_file ov_body fp='%s' err='%v'", File_path, err)
+		return err
+	}
+	wbt += wb
+
+	if wb, err = init_file(File_path, ov_footer, false); err != nil {
+		log.Printf("ERROR Create_ov init_file ov_footer fp='%s' err='%v'", File_path, err)
+		return err
+	}
+	wbt += wb
+
+	if DEBUG_OV { log.Printf("Create_ov OK fp='%s' wbt=%d", File_path, wbt) }
+	return nil
+
 } // end func Create_ov
 
 func Grow_ov(ovfh OVFH, pages int, blocksize string, mode int) (OVFH, error) {
