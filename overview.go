@@ -461,13 +461,18 @@ func (ov *OV) di_ov(ovl OVL) []ReturnChannelData {
 
 func Construct_OVL(ovl OVL) string {
 	// construct an overview line
-	ref_len, ref_len_limit := 0, 4096
+	max_ref := 15
+	ref_len, ref_len_limit := 0, 1024
 	var references string
 	for i, ref := range ovl.References {
 		len_ref := len(ref)
 		new_ref_len := ref_len + len_ref
 		if new_ref_len > ref_len_limit {
-			log.Printf("ERROR Construct_OVL new_ref_len=%d msgid='%s' i=%d", new_ref_len, ovl.Messageid, i)
+			log.Printf("BREAK Construct_OVL new_ref_len=%d msgid='%s' i=%d", new_ref_len, ovl.Messageid, i)
+			break
+		}
+		if i >= max_ref {
+			log.Printf("BREAK Construct_OVL new_ref_len=%d msgid='%s' i=%d/%d", new_ref_len, ovl.Messageid, i ,len(ovl.References))
 			break
 		}
 		references = references + " " + ref
