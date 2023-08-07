@@ -10,7 +10,7 @@ import (
 )
 
 type OV_Handler_data struct {
-	ovfh    OVFH  // overview mmap file handle struct
+	ovfh    *OVFH // overview mmap file handle struct
 	hid     int   // overview mmap is assigned to handler id
 	preopen bool  // overview mmap is opening
 	open    bool  // overview mmap is open
@@ -26,7 +26,7 @@ type OV_Handler struct {
 	CLOSE_ALWAYS   bool
 }
 
-func (oh *OV_Handler) GetOpen(hid int, file_path string, hash string) (OVFH, bool) {
+func (oh *OV_Handler) GetOpen(hid int, file_path string, hash string) (*OVFH, bool) {
 
 	if retbool, ch := open_mmap_overviews.lockMMAP(hid, hash, Overview.signal_chans[hid]); retbool == false && ch != nil {
 		<-ch // wait for anyone to return the unlock for this group
@@ -64,7 +64,7 @@ func (oh *OV_Handler) GetOpen(hid int, file_path string, hash string) (OVFH, boo
 			oh.mux.Unlock()
 			log.Printf("FATAL ERROR OV_H %d) Create_ov hash='%s' err='%v'", hid, hash, err)
 			OV_handler.KILL(hid)
-			return OVFH{}, false
+			return nil, false
 		}
 		if oh.Debug {
 			log.Printf("OV_H %d) Create_ov hash='%s' OK", hid, hash)
@@ -120,10 +120,10 @@ func (oh *OV_Handler) GetOpen(hid int, file_path string, hash string) (OVFH, boo
 
 	// was not open, return empty OVFH struct and true, will create new file handle
 	log.Printf("OV_H %d) ERROR GetOpen failed final hash='%s'", hid, hash)
-	return OVFH{}, false
+	return nil, false
 } // end func OV_Handler.GetOpen
 
-func (oh *OV_Handler) SetOpen(hid int, ovfh OVFH) bool {
+func (oh *OV_Handler) SetOpen(hid int, ovfh *OVFH) bool {
 	retval := false
 	if oh.Debug {
 		log.Printf("OV_H %d) SetOpen hash='%s'", hid, ovfh.Hash)
@@ -147,7 +147,7 @@ func (oh *OV_Handler) SetOpen(hid int, ovfh OVFH) bool {
 	return retval
 } // end func OV_Handler.SetOpen
 
-func (oh *OV_Handler) Park(hid int, ovfh OVFH) bool {
+func (oh *OV_Handler) Park(hid int, ovfh *OVFH) bool {
 	retval := false
 	oh.mux.Lock()
 	mapdata := oh.V[ovfh.Hash]
@@ -168,62 +168,47 @@ func (oh *OV_Handler) Park(hid int, ovfh OVFH) bool {
 } // end func OV_Handler.Park
 
 func (oh *OV_Handler) Check_idle() {
-	// oscilate between 25-250ms to check if we have to flush/close overviews
-	isleep_min, isleep_max, isleep := 25, 250, 250
+	isleep := 250 // milliseconds
 
-forever:
 	for {
-		start := utils.Nano()
-
-		oh.mux.Lock()
-		len_cv := len(oh.V)
-		oh.mux.Unlock()
-
-		if len_cv < OV_handler.MAX_OPEN_MMAPS/2 {
-			isleep += 1
-		} else {
-			isleep -= 2
-		}
-		if isleep < isleep_min {
-			isleep = isleep_min
-		} else if isleep > isleep_max {
-			isleep = isleep_max
-		}
+		time.Sleep(time.Duration(isleep) * time.Millisecond)
 
 		need_stop := is_closed_server(oh.STOP)
 		if need_stop {
-			if len_cv == 0 {
+			oh.mux.Lock()
+			if len(oh.V) == 0 {
 				log.Printf("OV Check_idle len_cv=0 need_stop=%t", need_stop)
-				break forever
+				oh.mux.Unlock()
+				return
 			}
+			oh.mux.Unlock()
 			time.Sleep(1 * time.Millisecond)
-		} else {
-			time.Sleep(time.Duration(isleep) * time.Millisecond)
 		}
 
-		// find one we can flush and close
-		send_close := false
+		start := utils.Nano()
+		// find open overviews we can flush and close
 		var newdata OV_Handler_data
 		var close_request Overview_Close_Request
-		looped := 0
+		var close_requests []Overview_Close_Request
 
 		oh.mux.Lock()
-
-	find_one:
+	find_idles:
 		for hash, data := range oh.V {
-			looped++
-
+			if data.ovfh == nil { // not yet set?
+				log.Printf("WARN OV Check_idle: data.ovfh=nil, not yet set? hash='%s'", hash)
+				continue
+			}
 			if hash != data.ovfh.Hash {
 				if data.ovfh.Hash == "" { // not yet set?
 					if oh.Debug {
 						log.Printf("WARN OV Check_idle: data.ovfh.Hash is empty, not yet set? hash='%s'", hash)
 					}
-					continue find_one
+					continue find_idles
 				} else {
 					log.Printf("FATAL ERROR OV Check_idle hash='%s' != data.ovfh.Hash='%s'", hash, data.ovfh.Hash)
 					OV_handler.KILL(0)
 					oh.mux.Unlock()
-					break forever
+					return
 				}
 			}
 
@@ -232,40 +217,37 @@ forever:
 				lastflush = utils.Now() - data.ovfh.Time_flush
 			}
 
-			if data.hid == 0 && (need_stop || lastflush >= MAX_FLUSH) {
+			if data.hid == 0 && (lastflush >= MAX_FLUSH || need_stop) {
 				if open_mmap_overviews.closelockMMAP(0, hash) {
 					close_request.force_close = true
 					close_request.ovfh = data.ovfh
 					close_request.reply_chan = nil
+					close_requests = append(close_requests, close_request)
 					newdata = data
 					newdata.hid = -2
-					send_close = true
 					time_open := utils.Now() - data.ovfh.Time_open
 					written := data.ovfh.Written
-					if oh.Debug || lastflush > MAX_FLUSH {
-						log.Printf("OV Check_Idle: close  hash='%s' lastflush=%d open=%d written=%d len_cv=%d-1", hash, lastflush, time_open, written, len_cv)
+					oh.V[newdata.ovfh.Hash] = newdata
+					if oh.Debug || lastflush > MAX_FLUSH*2 {
+						log.Printf("OV Check_Idle: close hash='%s' lastflush=%d time_open=%d written=%d len(oh.V)=%d", hash, lastflush, time_open, written, len(oh.V))
 					}
-					break find_one
+					//break find_one
 				}
 			}
 
-		} // end for find_one
-
-		if send_close {
-			oh.V[newdata.ovfh.Hash] = newdata
-		}
+		} // end for find_idles
 		oh.mux.Unlock()
 
-		if send_close {
+		for _, close_request := range close_requests {
 			close_request_chan <- close_request
 		}
 
 		if oh.Debug {
-			log.Printf("OV_Handler.Check_idle_Loop looped=%d took=%d ns", looped, utils.Nano()-start)
+			log.Printf("OV_Handler.Check_idle_Loop took=%d ns", utils.Nano()-start)
 		}
 	} // end for forever
 
-} // end func OV_Handler.Check_idle_Loop
+} // end func OV_Handler.Check_idle
 
 func (oh *OV_Handler) Is_assigned(hash string) bool {
 	retval := false

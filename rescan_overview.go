@@ -435,7 +435,7 @@ rescan_OV:
 
 		log.Printf("Rescan_OV badfooter -> fix-footer")
 
-		var ovfh OVFH
+		ovfh := &OVFH{}
 		ovfh.File_path = file_path
 		ovfh.File_handle = file_handle
 		ovfh.Mmap_handle = mmap_handle
