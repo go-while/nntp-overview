@@ -185,7 +185,7 @@ func (oh *OV_Handler) Check_idle() {
 			time.Sleep(1 * time.Millisecond)
 		}
 
-		start := utils.Nano()
+		//start := utils.Nano()
 		// find open overviews we can flush and close
 		var newdata OV_Handler_data
 		var close_request Overview_Close_Request
@@ -243,7 +243,7 @@ func (oh *OV_Handler) Check_idle() {
 		}
 
 		if oh.Debug {
-			log.Printf("OV_Handler.Check_idle_Loop took=%d ns", utils.Nano()-start)
+			//log.Printf("OV_Handler.Check_idle_Loop took=%d ns", utils.Nano()-start)
 		}
 	} // end for forever
 
