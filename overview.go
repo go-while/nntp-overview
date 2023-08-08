@@ -1889,8 +1889,12 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string) []*string
             if *fields == "msgid" {
                 fields := strings.Split(line, "\t")
                 if len(fields) == OVERVIEW_FIELDS {
-                    line = fields[4] // return msgid
-                    lines = append(lines, &line)
+					if isvalidmsgid(fields[4], true) {
+						lines = append(lines, &fields[4]) // catches message-id field
+					} else {
+						log.Printf("Error Scan_Overview file='%s' lc=%d field[4] err='!isvalidmsgid'", file, lc)
+						return nil
+					}
                 } else {
 					log.Printf("Error Scan_Overview file='%s' lc=%d", file, lc)
 					return nil
