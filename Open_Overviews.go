@@ -43,7 +43,7 @@ func (omo *Open_MMAP_Overviews) closelockMMAP(hid int, hash string) bool {
 	return retval
 } // end func closelockMMAP
 
-func (omo *Open_MMAP_Overviews) lockMMAP(hid int, hash string, signal_chan chan struct{}) (bool, chan struct{}) {
+func (omo *Open_MMAP_Overviews) lockMMAP(hid int, who *string, hash string, signal_chan chan struct{}) (bool, chan struct{}) {
 	omo.mux.Lock()
 
 	len_cv := len(omo.v)
@@ -52,7 +52,7 @@ func (omo *Open_MMAP_Overviews) lockMMAP(hid int, hash string, signal_chan chan 
 		omo.ch[hash] = append(omo.ch[hash], signal_chan)
 		omo.mux.Unlock()
 		if DEBUG_OV {
-			log.Printf("!!!! (OPENER) OV_H %d) lockMMAP islocked locktime=%d -> placed signal_chan @pos=%d hash='%s'", hid, locktime, len(omo.ch[hash]), hash)
+			log.Printf("%s !!!! (OPENER) OV_H %d) lockMMAP islocked locktime=%d -> placed signal_chan @pos=%d hash='%s'", *who, hid, locktime, len(omo.ch[hash]), hash)
 		}
 		return false, signal_chan
 	}
@@ -60,14 +60,14 @@ func (omo *Open_MMAP_Overviews) lockMMAP(hid int, hash string, signal_chan chan 
 	omo.v[hash] = utils.Nano()
 	omo.mux.Unlock()
 	if DEBUG_OV {
-		log.Printf("#### (OPENER) OV_H %d) lockMMAP hash='%s' true len_cv=%d ", hid, hash, len_cv)
+		log.Printf("%s #### (OPENER) OV_H %d) lockMMAP TRUE hash='%s' debug:len_cv=%d ", *who, hid, hash, len_cv)
 	}
 	return true, nil
 } // end func lockMMAP
 
-func (omo *Open_MMAP_Overviews) unlockMMAP(hid int, force_close bool, hash string) {
+func (omo *Open_MMAP_Overviews) unlockMMAP(hid int, who *string, force_close bool, hash string) {
 	if DEBUG_OV {
-		log.Printf("<--- OV_H %d) unlockMMAP hash='%s'", hid, hash)
+		log.Printf("%s <--- OV_H %d) unlockMMAP hash='%s'", *who, hid, hash)
 	}
 	var signal_chan chan struct{} = nil
 	omo.mux.Lock()
@@ -81,12 +81,12 @@ func (omo *Open_MMAP_Overviews) unlockMMAP(hid int, force_close bool, hash strin
 	waiting_worker := len(omo.ch[hash])
 	if waiting_worker > 0 {
 		if DEBUG_OV {
-			log.Printf("~~~~ (CLOSER) OV_H %d) unlockMMAP waiting_worker=%d locktime=%d hash='%s' ", hid, waiting_worker, locktime, hash)
+			log.Printf("%s ~~~~ (CLOSER) OV_H %d) unlockMMAP waiting_worker=%d locktime=%d hash='%s' ", *who, hid, waiting_worker, locktime, hash)
 		}
 		signal_chan, omo.ch[hash] = omo.ch[hash][0], omo.ch[hash][1:] // popList
 	} else {
 		if DEBUG_OV {
-			log.Printf("~~~~ (CLOSER) OV_H %d) unlockMMAP waiting_worker=0 clear map locktime=%d hash='%s' ", hid, locktime, hash)
+			log.Printf("%s ~~~~ (CLOSER) OV_H %d) unlockMMAP waiting_worker=0 clear map locktime=%d hash='%s' ", *who, hid, locktime, hash)
 		}
 		delete(omo.v, hash)
 	}
@@ -94,7 +94,7 @@ func (omo *Open_MMAP_Overviews) unlockMMAP(hid int, force_close bool, hash strin
 
 	if signal_chan != nil {
 		if DEBUG_OV {
-			log.Printf("<--- (CLOSER) OV_H %d) unlockMMAP signal locktime=%d  hash='%s'", hid, locktime, hash)
+			log.Printf("%s <--- (CLOSER) OV_H %d) unlockMMAP signal locktime=%d  hash='%s'", *who, hid, locktime, hash)
 		}
 		signal_chan <- struct{}{}
 	}
