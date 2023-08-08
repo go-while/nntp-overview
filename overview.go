@@ -513,7 +513,7 @@ func (ov *OV) GO_pi_ov(overviewline string, newsgroup string, hash string, cache
 
 	xref := fmt.Sprintf(XREF_PREFIX+" %s:%d", newsgroup, ovfh.Last)
 	ovl_line := fmt.Sprintf("%d\t%s\t%s\n", ovfh.Last, overviewline, xref)
-	ovfh, err, errstr := Write_ov(ovfh, ovl_line, false, false, false)
+	err, errstr := Write_ov(ovfh, ovl_line, false, false, false)
 	if err != nil {
 		log.Printf("ERROR Write_ovfh err='%v' errstr='%s'", err, errstr)
 		return fail_retchan(retchan)
@@ -523,7 +523,7 @@ func (ov *OV) GO_pi_ov(overviewline string, newsgroup string, hash string, cache
 			log.Printf("overview.Write_ov OK ng='%s' ovfh.Findex=%d ovfh.Last=%d", newsgroup, ovfh.Findex, ovfh.Last)
 		}
 
-		if ovfh, err = Update_Footer(ovfh); err != nil {
+		if err := Update_Footer(ovfh); err != nil {
 			log.Printf("ERROR overview.Update_Footer ng='%s' err='%v'", newsgroup, err)
 			return fail_retchan(retchan)
 
@@ -1256,7 +1256,7 @@ func Close_ov(ovfh *OVFH, update_footer bool, force_close bool) error {
 func handle_close_ov(ovfh *OVFH, update_footer bool, force_close bool, grow bool) error {
 	var err error
 	if update_footer {
-		if ovfh, err = Update_Footer(ovfh); err != nil {
+		if err := Update_Footer(ovfh); err != nil {
 			return err
 		}
 	}
@@ -1417,7 +1417,7 @@ replay:
 	return false, ovfh
 } // end Replay_Footer
 
-func Write_ov(ovfh *OVFH, data string, is_head bool, is_foot bool, grow bool) (*OVFH, error, string) {
+func Write_ov(ovfh *OVFH, data string, is_head bool, is_foot bool, grow bool) (error, string) {
 	var err error
 	//len_data := len(data)
 	databyte := []byte(data)
@@ -1433,17 +1433,17 @@ func Write_ov(ovfh *OVFH, data string, is_head bool, is_foot bool, grow bool) (*
 	}
 
 	if mmap_size != ovfh.Mmap_size { // unsure if this could change while mapped we have serious trouble
-		return nil, fmt.Errorf("ERROR Write_ov len(ovfh.Mmap_handle)=%d != ovfh.Mmap_size=%d fp='%s'", mmap_size, ovfh.Mmap_size, ovfh.File_path), ""
+		return fmt.Errorf("ERROR Write_ov len(ovfh.Mmap_handle)=%d != ovfh.Mmap_size=%d fp='%s'", mmap_size, ovfh.Mmap_size, ovfh.File_path), ""
 	}
 
 	if ovfh.Mmap_range < OV_RESERVE_BEG+OV_RESERVE_END {
-		return nil, fmt.Errorf("ERROR Write_ov ovfh.Mmap_size=%d fp='%s'", ovfh.Mmap_size, ovfh.File_path), ""
+		return fmt.Errorf("ERROR Write_ov ovfh.Mmap_size=%d fp='%s'", ovfh.Mmap_size, ovfh.File_path), ""
 	}
 
 	// total bodyspace of overview file
 	bodyspace := ovfh.Mmap_size - OV_RESERVE_BEG - OV_RESERVE_END
 	if bodyspace <= 0 {
-		return ovfh, fmt.Errorf("ERROR Write_ov bodyspace=%d fp='%s'", bodyspace, ovfh.File_path), ""
+		return fmt.Errorf("ERROR Write_ov bodyspace=%d fp='%s'", bodyspace, ovfh.File_path), ""
 	}
 
 	// dont count OV_RESERVE_BEG here as it is already included in Findex
@@ -1462,9 +1462,9 @@ func Write_ov(ovfh *OVFH, data string, is_head bool, is_foot bool, grow bool) (*
 			log.Printf("GROW OVERVIEW Findex=%d len_data=%d freespace=%d bodyend=%d newsize=%d hash='%s'", ovfh.Findex, len_data, freespace, bodyend, newbodysize, ovfh.Hash)
 		}
 
-		if ovfh, err = Grow_ov(ovfh, 1, "128K", 0); err != nil {
+		if err = Grow_ov(ovfh, 1, "128K", 0); err != nil {
 			overflow_err := fmt.Errorf("ERROR Write_ovfh -> Grow_ov err='%v' newsize=%d avail=%d mmap_size=%d", err, newbodysize, freespace, ovfh.Mmap_size)
-			return ovfh, overflow_err, ERR_OV_OVERFLOW
+			return overflow_err, ERR_OV_OVERFLOW
 		}
 		if DEBUG_OV {
 			log.Printf("DONE GROW OVERVIEW hash='%s'", ovfh.Hash)
@@ -1501,7 +1501,7 @@ func Write_ov(ovfh *OVFH, data string, is_head bool, is_foot bool, grow bool) (*
 		startindex := ovfh.Findex
 		limit := ovfh.Mmap_range - OV_RESERVE_END
 		if ovfh.Mmap_handle == nil {
-			return nil, fmt.Errorf("ERROR overview.Write_ovfh Mmap_handle == nil fp='%s'", ovfh.File_path), ""
+			return fmt.Errorf("ERROR overview.Write_ovfh Mmap_handle == nil fp='%s'", ovfh.File_path), ""
 		}
 		if DEBUG_OV {
 			log.Printf("Write_ov data=%d Findex=%d limit=%d range=%d handle=%d fp='%s'", len(data), startindex, limit, ovfh.Mmap_range, len(ovfh.Mmap_handle), ovfh.File_path)
@@ -1518,7 +1518,7 @@ func Write_ov(ovfh *OVFH, data string, is_head bool, is_foot bool, grow bool) (*
 		ovfh.Written += len_data
 
 	} // !is_head && ! is_foot
-	return ovfh, nil, ""
+	return nil, ""
 } // end func Write_ov
 
 func Read_Head_ov(ovfh *OVFH) (string, error) {
@@ -1588,7 +1588,7 @@ func Create_ov(File_path string, hash string, pages int) error {
 
 } // end func Create_ov
 
-func Grow_ov(ovfh *OVFH, pages int, blocksize string, mode int) (*OVFH, error) {
+func Grow_ov(ovfh *OVFH, pages int, blocksize string, mode int) (error) {
 	var err error
 	var errstr string
 	var header string
@@ -1602,16 +1602,16 @@ func Grow_ov(ovfh *OVFH, pages int, blocksize string, mode int) (*OVFH, error) {
 	if mode != 999 { // dont do these checks if we want to fix overview footer
 
 		// update footer
-		if ovfh, err := Update_Footer(ovfh); err != nil {
-			return ovfh, err
+		if err := Update_Footer(ovfh); err != nil {
+			return err
 		}
 
 		// check header
 		if header, err = Read_Head_ov(ovfh); err != nil {
-			return ovfh, err
+			return err
 		}
 		if retbool := check_ovfh_header(header); !retbool {
-			return ovfh, fmt.Errorf("ERROR Grow_ov -> check_ovfh_header fp='%s' header='%s' retbool=false", ovfh.File_path, header)
+			return fmt.Errorf("ERROR Grow_ov -> check_ovfh_header fp='%s' header='%s' retbool=false", ovfh.File_path, header)
 		}
 		if DEBUG_OV {
 			log.Printf("Grow_ov fp='%s' check_ovfh_header OK Findex=%d", ovfh.File_path, ovfh.Findex)
@@ -1619,19 +1619,19 @@ func Grow_ov(ovfh *OVFH, pages int, blocksize string, mode int) (*OVFH, error) {
 
 		// check footer
 		if footer, err = Read_Foot_ov(ovfh); err != nil {
-			return ovfh, err
+			return err
 		}
 		if retbool := check_ovfh_footer(footer); !retbool {
-			return ovfh, fmt.Errorf("ERROR Grow_ov -> check_ovfh_footer fp='%s' footer='%s' retbool=false", ovfh.File_path, footer)
+			return fmt.Errorf("ERROR Grow_ov -> check_ovfh_footer fp='%s' footer='%s' retbool=false", ovfh.File_path, footer)
 		}
 		if DEBUG_OV {
 			log.Printf("Grow_ov fp='%s' check_ovfh_footer OK Findex=%d", ovfh.File_path, ovfh.Findex)
 		}
 
 		// 1. overwrite footer area while still mapped
-		if ovfh, err, errstr = Write_ov(ovfh, "", false, true, true); err != nil {
+		if err, errstr = Write_ov(ovfh, "", false, true, true); err != nil {
 			log.Printf("ERROR Grow_ov -> Write_ov err='%v' errstr='%s'", err, errstr)
-			return ovfh, err
+			return err
 		}
 
 	} // end if mode != 999
@@ -1640,7 +1640,7 @@ func Grow_ov(ovfh *OVFH, pages int, blocksize string, mode int) (*OVFH, error) {
 	//force_close := true
 	//if err = Close_ov(ovfh, false, force_close); err != nil {
 	if err = handle_close_ov(ovfh, false, false, true); err != nil {
-		return ovfh, err
+		return err
 	}
 	if DEBUG_OV {
 		log.Printf("Grow_ov fp='%s' mmap closed OK", ovfh.File_path)
@@ -1649,7 +1649,7 @@ func Grow_ov(ovfh *OVFH, pages int, blocksize string, mode int) (*OVFH, error) {
 	// 3. extend the overview body
 	if wb, err := init_file(ovfh.File_path, zerofill_block(pages, blocksize), true); err != nil {
 		log.Printf("ERROR Grow_ov -> init_file err='%v'", err)
-		return ovfh, err
+		return err
 	} else {
 		wbt += wb
 	}
@@ -1661,7 +1661,7 @@ func Grow_ov(ovfh *OVFH, pages int, blocksize string, mode int) (*OVFH, error) {
 	ov_footer := construct_footer(ovfh)
 	if wb, err := init_file(ovfh.File_path, ov_footer, true); err != nil {
 		log.Printf("ERROR Grow_ov -> init_file2 err='%v'", err)
-		return ovfh, err
+		return err
 	} else {
 		wbt += wb
 	}
@@ -1671,7 +1671,7 @@ func Grow_ov(ovfh *OVFH, pages int, blocksize string, mode int) (*OVFH, error) {
 	//if ovfh, err = Open_ov(ovfh.File_path); err != nil {
 	if ovfh, err = handle_open_ov(ovfh.Hash, ovfh.File_path); err != nil {
 		log.Printf("ERROR Grow_ov -> Open_ov err='%v'", err)
-		return ovfh, err
+		return err
 	}
 
 	// 6. done
@@ -1679,17 +1679,17 @@ func Grow_ov(ovfh *OVFH, pages int, blocksize string, mode int) (*OVFH, error) {
 	if DEBUG_OV {
 		log.Printf("Grow_ov OK fp='%s' wbt=%d body_end=%d Findex=%d", ovfh.File_path, wbt, body_end, ovfh.Findex)
 	}
-	return ovfh, nil
+	return nil
 } // end func Grow_ov
 
-func Update_Footer(ovfh *OVFH) (*OVFH, error) {
+func Update_Footer(ovfh *OVFH) (error) {
 	if ovfh.Findex == 0 || ovfh.Last == 0 {
-		return nil, fmt.Errorf("ERROR Update_Footer ovfh.Findex=%d ovfh.Last=%d", ovfh.Findex, ovfh.Last)
+		return fmt.Errorf("ERROR Update_Footer ovfh.Findex=%d ovfh.Last=%d", ovfh.Findex, ovfh.Last)
 	}
 	var err error
 	//var errstr string
 	ov_footer := construct_footer(ovfh)
-	ovfh, err, _ = Write_ov(ovfh, ov_footer, false, true, false)
+	err, _ = Write_ov(ovfh, ov_footer, false, true, false)
 	if err != nil {
 		log.Printf("ERROR Update_Footer -> Write_ov err='%v'", err)
 	} else {
@@ -1697,7 +1697,7 @@ func Update_Footer(ovfh *OVFH) (*OVFH, error) {
 			log.Printf("OK Update_Footer -> Write_ov len_ov_footer=%d", len(ov_footer))
 		}
 	}
-	return ovfh, err
+	return err
 } // end func Update_Footer
 
 // private overview functions
@@ -1864,3 +1864,46 @@ func isvalidmsgid(astring string, silent bool) bool {
 	}
 	return false
 } // end func isvalidmsgid
+
+func Scan_Overview(file *string, a *uint64, b *uint64, fields *string) []*string {
+    var lines []*string
+    readFile, err := os.Open(*file)
+    if err != nil {
+        log.Printf("Error scan_overview err='%v'", err)
+        return nil
+    }
+    defer readFile.Close()
+    fileScanner := bufio.NewScanner(readFile)
+    fileScanner.Split(bufio.ScanLines)
+    lc := uint64(0) // linecounter
+    for fileScanner.Scan() {
+        if lc < *a {
+			lc++
+            continue
+        } else
+        if lc >= *a && lc <= *b {
+            line := fileScanner.Text()
+            if *fields == "all" {
+                lines = append(lines, &line)
+            } else
+            if *fields == "msgid" {
+                fields := strings.Split(line, "\t")
+                if len(fields) == OVERVIEW_FIELDS {
+                    line = fields[4] // return msgid
+                    lines = append(lines, &line)
+                } else {
+					log.Printf("Error Scan_Overview file='%s' lc=%d", file, lc)
+					return nil
+				}
+            } else {
+				log.Printf("Error scan_overview unknown *fields=%s", *fields)
+			}
+        }
+        if lc >= *b {
+            break
+        }
+        lc++
+    }
+	log.Printf("Scan_Overview: file='%s' lc=%d", *file, lc)
+    return lines
+} // end func Scan_Overview

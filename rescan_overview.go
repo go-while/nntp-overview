@@ -445,7 +445,7 @@ rescan_OV:
 		ovfh.Last = last_msgnum + 1
 		ovfh.Findex = last_newline_pos + 1
 
-		if ovfh, err = Grow_ov(ovfh, 1, "1K", mode); err != nil {
+		if err = Grow_ov(ovfh, 1, "1K", mode); err != nil {
 			log.Printf("ERROR Rescan_OV -> fix-footer -> Grow_ov err='%v'", err)
 			return false, 0
 		}

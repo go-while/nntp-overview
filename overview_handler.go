@@ -375,7 +375,7 @@ func (oh *OV_Handler) process_close_request(hid int, close_request Overview_Clos
 			// force_close mmap.
 			force_close = true
 		} else if lastflush >= MAX_FLUSH && wrote > OV_RESERVE_END {
-			if ovfh, err := Update_Footer(close_request.ovfh); err != nil {
+			if err := Update_Footer(close_request.ovfh); err != nil {
 				log.Printf("FATAL ERROR (CLOSER) OV_H %d) process_close_request Update_Footer failed err='%v' fp='%s", hid, err, file)
 				reply.err = err
 				OV_handler.KILL(hid)
@@ -383,7 +383,7 @@ func (oh *OV_Handler) process_close_request(hid int, close_request Overview_Clos
 				if oh.Debug {
 					log.Printf("(CLOSER) OV_H %d) process_close_request flushed lastflush=%d fp='%s", hid, lastflush, file)
 				}
-				close_request.ovfh = ovfh
+				//close_request.ovfh = ovfh
 			}
 			// mmap needs a flush
 
