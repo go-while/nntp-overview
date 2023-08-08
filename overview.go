@@ -1867,8 +1867,9 @@ func isvalidmsgid(astring string, silent bool) bool {
 	return false
 } // end func isvalidmsgid
 
-func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.Conn, initline string) ([]*string, error) {
+func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.Conn, initline string, txb *int) ([]*string, error) {
     var lines []*string
+    var sent uint64
     readFile, err := os.Open(*file)
     if err != nil {
         log.Printf("Error scan_overview err='%v'", err)
@@ -1883,10 +1884,11 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 			initline = "224 xover follows"
 		}
 		// conn is set: send init line
-		_, err := io.WriteString(conn, initline+CRLF)
+		tx, err := io.WriteString(conn, initline+CRLF)
 		if err != nil {
 			return lines, err
 		}
+		*txb += tx
 	}
     for fileScanner.Scan() {
         if lc < *a {
@@ -1909,10 +1911,12 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 					lines = append(lines, &line)
 				} else {
 					// conn is set: send lines
-					_, err := io.WriteString(conn, line+CRLF)
+					tx, err := io.WriteString(conn, line+CRLF)
 					if err != nil {
 						return lines, err
 					}
+					sent++
+					*txb += tx
 				}
             } else
             if *fields == "msgid" {
@@ -1923,7 +1927,7 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 						lines = append(lines, &fields[4]) // catches message-id field
 
 					} else {
-						log.Printf("Error Scan_Overview file='%s' lc=%d field[4] err='!isvalidmsgid'", file, lc)
+						log.Printf("Error Scan_Overview file='%s' lc=%d field[4] err='!isvalidmsgid'", filepath.Base(*file), lc)
 						break
 					}
                 } else {
@@ -1939,11 +1943,13 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
         if lc >= *b {
 			// conn is set: send final dot
 			if conn != nil {
-				_, err := io.WriteString(conn, "."+CRLF)
+				tx, err := io.WriteString(conn, "."+CRLF)
 				if err != nil {
 					return lines, err
 				}
-				return lines, err
+				*txb += tx
+				log.Printf("Scan_Overview file='%s' a=%d b=%d sent=%d txbytes=%d", filepath.Base(*file), *a, *b, sent, *txb)
+				return lines, nil
 			}
             return lines, err
         }
