@@ -29,6 +29,7 @@ const (
 	MAX_FLUSH int64 = 15 // flush mmaps every N seconds
 
 	LIMIT_SPLITMAX_NEWSGROUPS int = 25
+	MAX_REF int = 30
 
 	SIZEOF_FOOT     int = 7
 	OVL_CHECKSUM    int = 5
@@ -463,7 +464,7 @@ func (ov *OV) di_ov(who *string, ovl OVL) []*ReturnChannelData {
 
 func Construct_OVL(ovl OVL) string {
 	// construct an overview line
-	max_ref := 15
+	MAX_REF := 30
 	ref_len, ref_len_limit := 0, 1024
 	var references string
 	for i, ref := range ovl.References {
@@ -473,7 +474,7 @@ func Construct_OVL(ovl OVL) string {
 			log.Printf("BREAK Construct_OVL new_ref_len=%d msgid='%s' i=%d", new_ref_len, ovl.Messageid, i)
 			break
 		}
-		if i >= max_ref {
+		if i >= MAX_REF {
 			log.Printf("BREAK Construct_OVL new_ref_len=%d msgid='%s' i=%d/%d", new_ref_len, ovl.Messageid, i ,len(ovl.References))
 			break
 		}
@@ -1061,7 +1062,13 @@ func IsValidGroupName(group string) bool {
 func Test_Overview(who *string, file_path string, DEBUG bool) bool {
 	// test should never try to update the footer!
 	update_footer := false
+	/*hash, err := get_hash_from_filename(file_path)
+	if err != nil {
+		log.Printf("%s ERROR Test_Overview get_hash_from_filename='%s' err='%v'", file_path, err)
+		return false
+	}*/
 	if ovfh, err := Open_ov(who, file_path); err != nil {
+	//if ovfh, err := handle_open_ov(who, hash, file_path); err != nil {
 		log.Printf("%s ERROR OV TEST_Overview Open_ov err='%v' fp='%s'", *who, err, filepath.Base(file_path))
 		return false
 
@@ -1122,7 +1129,6 @@ func Open_ov(who *string, file_path string) (*OVFH, error) {
 	if DEBUG_OV {
 		log.Printf("%s GOT REPLY Open_ov -> reply_chan fp='%s'", *who, filepath.Base(file_path))
 	}
-	//globalCounter.Dec("wait_open_request")
 
 	if reply.err == nil {
 
@@ -1233,7 +1239,10 @@ func handle_open_ov(who *string, hash string, file_path string) (*OVFH, error) {
 
 func Close_ov(who *string, ovfh *OVFH, update_footer bool, force_close bool) error {
 	var err error
-
+	if ovfh == nil {
+		err = fmt.Errorf("%s Error Close_ov ovfh=nil update_footer=%t force_close=%t", *who, update_footer, force_close)
+		return err
+	}
 	file := filepath.Base(ovfh.File_path)
 	var close_request Overview_Close_Request
 	reply_chan := make(chan Overview_Reply, 1) // FIXME: mark*836b04be* can we not create the reply_chan everytime? just pass it from upper end to here and reuse it?
@@ -1918,7 +1927,9 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 		if err != nil {
 			return lines, err
 		}
-		*txb += tx
+		if txb != nil {
+			*txb += tx
+		}
 	}
     for fileScanner.Scan() {
         if lc < *a {
@@ -1946,7 +1957,9 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 						return lines, err
 					}
 					sent++
-					*txb += tx
+					if txb != nil {
+						*txb += tx
+					}
 				}
             } else
             if *fields == "msgid" {
@@ -1977,8 +1990,12 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 				if err != nil {
 					return lines, err
 				}
-				*txb += tx
-				log.Printf("Scan_Overview file='%s' a=%d b=%d sent=%d txbytes=%d", filepath.Base(*file), *a, *b, sent, *txb)
+				if txb != nil {
+					*txb += tx
+					log.Printf("Scan_Overview file='%s' a=%d b=%d sent=%d txbytes=%d", filepath.Base(*file), *a, *b, sent, *txb)
+				} else {
+					log.Printf("Scan_Overview file='%s' a=%d b=%d sent=%d txbytes=nil", filepath.Base(*file), *a, *b, sent)
+				}
 				return lines, nil
 			}
             return lines, err
