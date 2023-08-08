@@ -317,11 +317,12 @@ rescan_OV:
 					return false, 0
 				}
 				if uniq_msgids[msgid] > 0 {
-					log.Printf("ERROR Rescan_OV#5a @line=%d !uniq_msgid msgnum=%d msgid='%s' firstL=%d", lines, msgnum, msgid, uniq_msgids[msgid])
-					return false, 0
+					log.Printf("WARN Rescan_OV#5a @line=%d !uniq_msgid msgnum=%d msgid='%s' firstL=%d", lines, msgnum, msgid, uniq_msgids[msgid])
+					//return false, 0
+				} else {
+					uniq_msgids[msgid] = lines
+					list_msgids = append(list_msgids, msgid)
 				}
-				uniq_msgids[msgid] = lines
-				list_msgids = append(list_msgids, msgid)
 
 				if bytes <= 0 && deezlines <= 0 {
 					log.Printf("ERROR Rescan_OV#6 @line=%d msgnum=%d bytes=%d lines=%d", lines, msgnum, bytes, deezlines)
@@ -452,7 +453,8 @@ rescan_OV:
 
 		if ovfh.Time_open > 0 {
 			log.Printf("Rescan OV fix-footer OK, closing")
-			if err = Close_ov(&who, ovfh, false, true); err != nil {
+			//if err = Close_ov(&who, ovfh, false, true); err != nil {
+			if err = handle_close_ov(&who, ovfh, false, true, false); err != nil {
 				log.Printf("ERROR Rescan OV fix-footer Close_ov err='%v' fp='%s'", err, filepath.Base(file_path))
 				return false, 0
 			}
