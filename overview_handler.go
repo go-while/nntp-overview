@@ -107,7 +107,9 @@ func (oh *OV_Handler) GetOpen(hid int, who *string, file_path string, hash strin
 		}
 
 		if OV_handler.SetOpen(hid, who, ovfh) {
-			log.Printf("%s SetOpen TRUE fp='%s'", *who, filepath.Base(file_path))
+			if DEBUG_OV {
+				log.Printf("%s SetOpen TRUE fp='%s'", *who, filepath.Base(file_path))
+			}
 			//reply.ovfh = ovfh
 			//reply.retbool = true
 			//retval = reply.retbool
