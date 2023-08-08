@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	DEBUG_OV bool   = true
+	DEBUG_OV bool   = false
 	null     string = "\x00"
 	tab      string = "\010"
 	CR       string = "\r"
@@ -525,7 +525,7 @@ func (ov *OV) GO_pi_ov(who *string, overviewline string, newsgroup string, hash 
 		return fail_retchan(retchan)
 
 	} else {
-		if new_ovfh != nil {
+		if new_ovfh != nil && new_ovfh.Mmap_handle != nil {
 			ovfh = new_ovfh
 		}
 		if DEBUG_OV {
@@ -1164,7 +1164,7 @@ func handle_open_ov(who *string, hash string, file_path string) (*OVFH, error) {
 
 	time_open, time_flush, written := utils.Now(), utils.Now(), 0
 
-	log.Printf("%s handle_open_ov new OVFH fp='%s'", *who, file_path)
+	if DEBUG_OV { log.Printf("%s handle_open_ov new OVFH fp='%s'", *who, file_path) }
 	ovfh := &OVFH{} // { file_path, file_handle, mmap_handle, mmap_size, time_open, time_flush, written, 0, 0 }
 	ovfh.File_path = file_path
 	ovfh.File_handle = file_handle
@@ -1221,7 +1221,7 @@ func handle_open_ov(who *string, hash string, file_path string) (*OVFH, error) {
 	ovfh.Findex = findex
 	ovfh.Last = last
 	if Replay_Footer(who, ovfh) {
-		log.Printf("%s handle_open_ov -> Replay_Footer OK fp='%s'", *who, file_path)
+		if DEBUG_OV { log.Printf("%s handle_open_ov -> Replay_Footer OK fp='%s'", *who, file_path) }
 		return ovfh, nil
 	} else {
 		log.Printf("%s ERROR handle_open_ov -> !Replay_Footer fp='%s'", *who, file_path)
@@ -1488,7 +1488,7 @@ func Write_ov(who *string, ovfh *OVFH, data string, is_head bool, is_foot bool, 
 		if DEBUG_OV {
 			log.Printf("%s Write_ov DONE GROW OVERVIEW hash='%s'", *who , ovfh.Hash)
 		}
-		if new_ovfh != nil {
+		if new_ovfh != nil && new_ovfh.Mmap_handle != nil {
 			ovfh = new_ovfh
 		}
 	}
@@ -1543,7 +1543,7 @@ func Write_ov(who *string, ovfh *OVFH, data string, is_head bool, is_foot bool, 
 		ovfh.Written += len_data
 
 	} // !is_head && ! is_foot
-	if new_ovfh != nil {
+	if new_ovfh != nil && new_ovfh.Mmap_handle != nil {
 		return new_ovfh, err, ""
 	}
 	return nil, err, ""
@@ -1705,7 +1705,6 @@ func Grow_ov(who *string, ovfh *OVFH, pages int, blocksize string, mode int) (*O
 		log.Printf("%s ERROR Grow_ov -> handle_open_ov ovfh='%v' Mmap_handle='%v 'err='%v'", *who, new_ovfh, new_ovfh.Mmap_handle, err)
 		return nil, err
 	}
-
 	// 6. done
 	body_end := new_ovfh.Mmap_size - OV_RESERVE_END
 	if DEBUG_OV {
