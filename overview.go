@@ -7,6 +7,8 @@ import (
 	"github.com/go-while/go-utils"
 	"github.com/go-while/nntp-storage"
 	"log"
+	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1865,49 +1867,88 @@ func isvalidmsgid(astring string, silent bool) bool {
 	return false
 } // end func isvalidmsgid
 
-func Scan_Overview(file *string, a *uint64, b *uint64, fields *string) []*string {
+func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.Conn, initline string) ([]*string, error) {
     var lines []*string
     readFile, err := os.Open(*file)
     if err != nil {
         log.Printf("Error scan_overview err='%v'", err)
-        return nil
+        return lines, err
     }
     defer readFile.Close()
     fileScanner := bufio.NewScanner(readFile)
     fileScanner.Split(bufio.ScanLines)
     lc := uint64(0) // linecounter
+	if conn != nil {
+		if initline == "" {
+			initline = "224 xover follows"
+		}
+		// conn is set: send init line
+		_, err := io.WriteString(conn, initline+CRLF)
+		if err != nil {
+			return lines, err
+		}
+	}
     for fileScanner.Scan() {
         if lc < *a {
-			lc++
-            continue
+			// pass
         } else
         if lc >= *a && lc <= *b {
             line := fileScanner.Text()
+            ll := len(line)
+            if ll == 0 {
+				break
+			} else
+            if ll > 0 && ll <= 3 {
+				if line[0] == '\x00' || line == "EOV" {
+					log.Printf("break Scan_Overview lc=%d")
+					break
+				}
+			}
             if *fields == "all" {
-                lines = append(lines, &line)
+				if conn == nil {
+					lines = append(lines, &line)
+				} else {
+					// conn is set: send lines
+					_, err := io.WriteString(conn, line+CRLF)
+					if err != nil {
+						return lines, err
+					}
+				}
             } else
             if *fields == "msgid" {
                 fields := strings.Split(line, "\t")
                 if len(fields) == OVERVIEW_FIELDS {
 					if isvalidmsgid(fields[4], true) {
+						//return &fields[4]
 						lines = append(lines, &fields[4]) // catches message-id field
+
 					} else {
 						log.Printf("Error Scan_Overview file='%s' lc=%d field[4] err='!isvalidmsgid'", file, lc)
-						return nil
+						break
 					}
                 } else {
 					log.Printf("Error Scan_Overview file='%s' lc=%d", file, lc)
-					return nil
+					break
 				}
             } else {
 				log.Printf("Error scan_overview unknown *fields=%s", *fields)
+				break
 			}
         }
+        // finally break out
         if lc >= *b {
-            break
+			// conn is set: send final dot
+			if conn != nil {
+				_, err := io.WriteString(conn, "."+CRLF)
+				if err != nil {
+					return lines, err
+				}
+				return lines, err
+			}
+            return lines, err
         }
         lc++
-    }
+    } // end for filescanner
 	log.Printf("Scan_Overview: file='%s' lc=%d", *file, lc)
-    return lines
+    return lines, err
 } // end func Scan_Overview
