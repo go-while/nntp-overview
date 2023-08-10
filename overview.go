@@ -26,7 +26,7 @@ const (
 
 	XREF_PREFIX = "nntp"
 
-	MAX_FLUSH int64 = 15 // flush mmaps every N seconds
+	MAX_FLUSH int64 = 5 // flush mmaps every N seconds
 
 	LIMIT_SPLITMAX_NEWSGROUPS int = 25
 	MAX_REF int = 30
@@ -193,7 +193,7 @@ func (ov *OV) Load_Overview(maxworkers int, max_queue_size int, max_open_mmaps i
 
 	Overview.more_parallel = more_parallel
 
-	log.Printf("Start Load_Overview: maxworkers=%d max_queue_size=%d max_open_mmaps=%d known_messageids=%d ov_opener=%d ov_closer=%d, more_parallel=%t, stop_server_chan='%v', debug_OV_handler=%t", maxworkers, max_queue_size, max_open_mmaps, known_messageids, ov_opener, ov_closer, more_parallel, stop_server_chan, debug_OV_handler)
+	if debug_OV_handler { log.Printf("Start Load_Overview: maxworkers=%d max_queue_size=%d max_open_mmaps=%d known_messageids=%d ov_opener=%d ov_closer=%d, more_parallel=%t, stop_server_chan='%v', debug_OV_handler=%t", maxworkers, max_queue_size, max_open_mmaps, known_messageids, ov_opener, ov_closer, more_parallel, stop_server_chan, debug_OV_handler) }
 
 	if MAX_Open_overviews_chan == nil {
 		preload_zero("PRELOAD_ZERO_1K")
@@ -240,9 +240,10 @@ func (ov *OV) Load_Overview(maxworkers int, max_queue_size int, max_open_mmaps i
 			CLOSE_ALWAYS:   close_always,
 		}
 
+		if debug_OV_handler {
 		log.Printf("Load_Overview maxworkers=%d, max_queue_size=%d, max_open_mmaps=%d, known_messageids=%d, ov_opener=%d, ov_closer=%d, stop_server_chan='%v' debug_OV_handler=%t len(MAX_Open_overviews_chan)=%d",
 			maxworkers, max_queue_size, max_open_mmaps, known_messageids, ov_opener, ov_closer, stop_server_chan, debug_OV_handler, len(MAX_Open_overviews_chan))
-
+		}
 		workers_done_chan = make(chan int, maxworkers)
 		Overview.OVIC = make(chan OVL, max_queue_size) // one input_channel to serve them all with cap of max_queue_size
 
@@ -326,7 +327,7 @@ func notify_workers_done_chan(ov_wid int) {
 func (ov *OV) overview_Worker(ov_wid int) {
 	who := fmt.Sprintf("OVW:%d",ov_wid)
 	did, max := 0, 10000
-	log.Printf("%s Alive", who)
+	//log.Printf("%s Alive", who)
 
 	stop := false
 forever:
@@ -520,7 +521,7 @@ func (ov *OV) GO_pi_ov(who *string, overviewline string, newsgroup string, hash 
 
 	xref := fmt.Sprintf(XREF_PREFIX+" %s:%d", newsgroup, ovfh.Last)
 	ovl_line := fmt.Sprintf("%d\t%s\t%s\n", ovfh.Last, overviewline, xref)
-	new_ovfh, err, errstr := Write_ov(who, ovfh, ovl_line, false, false, false)
+	new_ovfh, err, errstr := Write_ov(who, ovfh, ovl_line, false, false, false, false)
 	if err != nil {
 		log.Printf("%s ERROR GO_pi_ovWrite_ovfh err='%v' errstr='%s'", *who, err, errstr)
 		return fail_retchan(retchan)
@@ -1284,20 +1285,24 @@ func handle_close_ov(who *string, ovfh *OVFH, update_footer bool, force_close bo
 		if _, err := Update_Footer(who, ovfh, "handle_close_ov"); err != nil {
 			return err
 		}
-
 	}
 
-	if err = ovfh.Mmap_handle.Flush(); err == nil {
-		if err = ovfh.Mmap_handle.Unmap(); err == nil {
-			if err = ovfh.File_handle.Close(); err == nil {
-				if DEBUG_OV {
-					log.Printf("%s handle_close_ov update_footer=%t grow=%t OK fp='%s'", *who, update_footer, grow, ovfh.File_path)
-				}
-				return nil
-			}
-		}
+	if err = ovfh.Mmap_handle.Flush(); err != nil {
+		return err
 	}
-	log.Printf("%s ERROR handle_close_ov fp='%s' err='%v'", *who, ovfh.File_path, err)
+	if err = ovfh.Mmap_handle.Unmap(); err != nil {
+		log.Fatalf("Error ovfh.Mmap_handle.Unmap err='%v'", err)
+		return err
+	}
+	if err = ovfh.File_handle.Close(); err != nil {
+		return err
+	}
+	if DEBUG_OV {
+		log.Printf("%s handle_close_ov update_footer=%t grow=%t OK fp='%s'", *who, update_footer, grow, ovfh.File_path)
+	}
+	if err != nil {
+		log.Printf("%s ERROR handle_close_ov fp='%s' err='%v'", *who, ovfh.File_path, err)
+	}
 	return err
 } // end func handle_close_ov
 
@@ -1443,7 +1448,7 @@ replay:
 	return false
 } // end Replay_Footer
 
-func Write_ov(who *string, ovfh *OVFH, data string, is_head bool, is_foot bool, grow bool) (*OVFH, error, string) {
+func Write_ov(who *string, ovfh *OVFH, data string, is_head bool, is_foot bool, grow bool, delete bool) (*OVFH, error, string) {
 	var err error
 	//len_data := len(data)
 	databyte := []byte(data)
@@ -1489,7 +1494,7 @@ func Write_ov(who *string, ovfh *OVFH, data string, is_head bool, is_foot bool, 
 			log.Printf("%s Write_ov GROW OVERVIEW Findex=%d len_data=%d freespace=%d bodyend=%d newsize=%d hash='%s'", *who, ovfh.Findex, len_data, freespace, bodyend, newbodysize, ovfh.Hash)
 		}
 
-		new_ovfh, err = Grow_ov(who, ovfh, 1, "128K", 0);
+		new_ovfh, err = Grow_ov(who, ovfh, 1, "128K", 0, delete);
 		if err != nil || new_ovfh == nil || new_ovfh.Mmap_handle == nil || len(new_ovfh.Mmap_handle) == 0 {
 			overflow_err := fmt.Errorf("%s ERROR Write_ovfh -> Grow_ov err='%v' newsize=%d avail=%d mmap_size=%d fp='%s' mmaphandle=%d", *who, err, newbodysize, freespace, new_ovfh.Mmap_size, filepath.Base(new_ovfh.File_path), len(new_ovfh.Mmap_handle))
 			return nil, overflow_err, ERR_OV_OVERFLOW
@@ -1502,21 +1507,49 @@ func Write_ov(who *string, ovfh *OVFH, data string, is_head bool, is_foot bool, 
 		}
 	}
 
-	if is_foot && data == "" && grow == true {
+	if is_foot && data == "" && grow == true && !delete {
+		if ovfh.Mmap_handle == nil || (ovfh.Mmap_size != len(ovfh.Mmap_handle) || (ovfh.Mmap_range != len(ovfh.Mmap_handle)-1)) {
+			err = fmt.Errorf("%s ERROR Write_ov is_foot data='' grow=true Findex=%d ovfh.Mmap_size=%d Mmap_handle=%d fp='%s'", *who, ovfh.Findex, ovfh.Mmap_size, len(ovfh.Mmap_handle), filepath.Base(ovfh.File_path))
+			return nil, err, ""
+		}
 		// zerofill-overwrite the footer space
 		index := ovfh.Mmap_size - OV_RESERVE_END
 		databyte := []byte(zerofill(ZERO_PATTERN, OV_RESERVE_END))
 		// writes data to mmap byte for byte
 		for pos, abyte := range databyte {
+			if DEBUG_OV {
+				log.Printf("write databyte index=%d/%d %d/%d bytes=%d delete=%t", index, ovfh.Mmap_range, pos, len(databyte)-1, len(databyte), delete)
+			}
 			if index >= ovfh.Mmap_size {
-				if DEBUG_OV {
-					log.Printf("%s Write_ov GROW fp='%s' reached end index=%d mmap_size=%d pos=%d len_databyte=%d break", *who, filepath.Base(ovfh.File_path), index, ovfh.Mmap_size, pos+1, len(databyte))
-				}
+				log.Printf("%s Write_ov GROW fp='%s' reached end index=%d mmap_size=%d pos=%d len_databyte=%d break", *who, filepath.Base(ovfh.File_path), index, ovfh.Mmap_size, pos+1, len(databyte))
 				break
 			}
 			ovfh.Mmap_handle[index] = abyte
 			index++
 		}
+	} else
+	if is_foot && data == "" && grow == true && delete {
+		if ovfh.Mmap_handle == nil || (ovfh.Mmap_size != len(ovfh.Mmap_handle) || (ovfh.Mmap_range != len(ovfh.Mmap_handle)-1)) {
+			err = fmt.Errorf("%s ERROR Write_ov is_foot data='' grow=true Findex=%d ovfh.Mmap_size=%d Mmap_handle=%d fp='%s'", *who, ovfh.Findex, ovfh.Mmap_size, len(ovfh.Mmap_handle), filepath.Base(ovfh.File_path))
+			return nil, err, ""
+		}
+		// zerofill-overwrite the footer space
+		index := ovfh.Findex
+		databyte := []byte(zerofill(ZERO_PATTERN, ovfh.Mmap_size - index))
+		// writes data to mmap byte for byte
+		for pos, abyte := range databyte {
+			if index >= ovfh.Mmap_size {
+				log.Printf("%s Write_ov GROW fp='%s' reached end index=%d mmap_size=%d pos=%d len_databyte=%d break", *who, filepath.Base(ovfh.File_path), index, ovfh.Mmap_size, pos+1, len(databyte))
+				break
+			}
+			if DEBUG_OV {
+				log.Printf("write databyte index=%d/%d %d/%d bytes=%d delete=%t", index, ovfh.Mmap_range, pos, len(databyte)-1, len(databyte), delete)
+			}
+			ovfh.Mmap_handle[index] = abyte
+			index++
+		}
+		log.Printf(" --> wrote databyte ovfh.Findex=%d index=%d/%d bytes=%d delete=%t", ovfh.Findex, index, ovfh.Mmap_range, len(databyte), delete)
+
 
 	} else if is_foot && data != "" { // footer data is not empty, write footer
 		startindex := ovfh.Mmap_size - OV_RESERVE_END
@@ -1538,22 +1571,33 @@ func Write_ov(who *string, ovfh *OVFH, data string, is_head bool, is_foot bool, 
 			return nil, fmt.Errorf("%s ERROR Write_ov Mmap_handle == nil fp='%s'", *who, filepath.Base(ovfh.File_path)), ""
 		}
 		if DEBUG_OV {
-			log.Printf("%s Write_ov #346 data=%d Findex=%d limit=%d range=%d handle=%d fp='%s'", *who, len(data), startindex, limit, ovfh.Mmap_range, len(ovfh.Mmap_handle), filepath.Base(ovfh.File_path))
+			log.Printf("%s Write_ov #346 data=%d Findex=%d limit=%d range=%d handle=%d fp='%s' delete=%t", *who, len(data), startindex, limit, ovfh.Mmap_range, len(ovfh.Mmap_handle), filepath.Base(ovfh.File_path), delete)
 		}
+
 
 		// writes data to mmap byte for byte
 		for _, abyte := range databyte {
-			if ovfh.Findex >= limit {
+			if startindex >= limit {
 				break
 			}
-			ovfh.Mmap_handle[ovfh.Findex] = abyte
-			ovfh.Findex++
+			ovfh.Mmap_handle[startindex] = abyte
+			startindex++
 		}
 		ovfh.Written += len_data
+		if !delete {
+			ovfh.Findex = startindex
+		}
 
 	} // !is_head && ! is_foot
+
 	if new_ovfh != nil && new_ovfh.Mmap_handle != nil {
+		if DEBUG_OV {
+			log.Printf("Write_ov returned new_ovfh err='%v' errstr=''", err)
+		}
 		return new_ovfh, err, ""
+	}
+	if err != nil {
+		log.Printf("Write_ov returned ovfh=nil err='%v' errstr=''", err)
 	}
 	return nil, err, ""
 } // end func Write_ov
@@ -1625,7 +1669,7 @@ func Create_ov(who *string, File_path string, hash string, pages int) error {
 
 } // end func Create_ov
 
-func Grow_ov(who *string, ovfh *OVFH, pages int, blocksize string, mode int) (*OVFH, error) {
+func Grow_ov(who *string, ovfh *OVFH, pages int, blocksize string, mode int, delete bool) (*OVFH, error) {
 	var err error
 	var errstr string
 	var header string
@@ -1671,12 +1715,22 @@ func Grow_ov(who *string, ovfh *OVFH, pages int, blocksize string, mode int) (*O
 		}
 
 		// 1. overwrite footer area while still mapped
-		if _, err, errstr = Write_ov(who, ovfh, "", false, true, true); err != nil {
+		delete = false
+		if _, err, errstr = Write_ov(who, ovfh, "", false, true, true, delete); err != nil {
 			log.Printf("%s ERROR Grow_ov -> Write_ov err='%v' errstr='%s'", *who, err, errstr)
 			return nil, err
 		}
 
 	} // end if mode != 999
+
+	/*
+	if mode == 999 {
+		// 1. overwrite footer area while still mapped
+		if _, err, errstr = Write_ov(who, ovfh, "", false, true, true, delete); err != nil {
+			log.Printf("%s ERROR Grow_ov -> Write_ov err='%v' errstr='%s' mode=%d", *who, err, errstr, mode)
+			return nil, err
+		}
+	}*/
 
 	// 2. unmap and close overview mmap
 	force_close := true
@@ -1684,7 +1738,7 @@ func Grow_ov(who *string, ovfh *OVFH, pages int, blocksize string, mode int) (*O
 		return nil, err
 	}
 	if DEBUG_OV {
-		log.Printf("%s Grow_ov fp='%s' mmap closed OK", *who, ovfh.File_path)
+		log.Printf("%s Grow_ov -> 2. mmap closed OK fp='%s' ", *who, ovfh.File_path)
 	}
 
 	// 3. extend the overview body
@@ -1697,9 +1751,39 @@ func Grow_ov(who *string, ovfh *OVFH, pages int, blocksize string, mode int) (*O
 	if DEBUG_OV {
 		log.Printf("%s Grow_ov fp='%s' zerofill_block=%d OK", *who, ovfh.File_path, wbt)
 	}
+	if delete {
+		// 3.1 reopen mmap file
+		ovfh.File_handle, ovfh.Mmap_handle, err = utils.MMAP_FILE(ovfh.File_path, "r")
+		if err != nil || ovfh == nil {
+			log.Printf("%s ERROR Grow_ov -> 3.1 handle_open_ov new_ovfh='%v' err='%v'", *who, ovfh, err)
+			return nil, err
+		}
+		if ovfh.Mmap_handle == nil {
+			err = fmt.Errorf("%s ERROR Grow_ov -> 3.1 handle_open_ov Mmap_handle=nil", *who)
+			log.Printf("%s", err)
+			return nil, err
+		}
+		log.Printf("3.1 reopen mmap file oldMmap_size=%d newMmap_size=%d", ovfh.Mmap_size, len(ovfh.Mmap_handle))
+		ovfh.Mmap_size = len(ovfh.Mmap_handle)
+		ovfh.Mmap_range = ovfh.Mmap_size-1
+		// 3.2 unmap and close overview mmap
+		retbool, err := utils.MMAP_CLOSE(ovfh.File_path, ovfh.File_handle, ovfh.Mmap_handle, "r")
+		if !retbool || err != nil {
+			log.Printf("%s Error Grow_ov -> 3.2 MMAP_CLOSE retbool=%t err='%v' fp='%s' ", *who, retbool, err, ovfh.File_path)
+			return nil, err
+		}
+		if DEBUG_OV {
+			log.Printf("%s Grow_ov -> 3.2 mmap closed OK fp='%s' ", *who, ovfh.File_path)
+		}
+		ovfh.Mmap_size += OV_RESERVE_END
+	}
 
 	// 4. append footer
-	ov_footer := construct_footer(who, ovfh)
+	ov_footer := construct_footer(who, ovfh, "Grow_ov()")
+	if len(ov_footer) != OV_RESERVE_END {
+		log.Printf("%s Error Grow_ov -> 4. ov_footer=%d != OV_RESERVE_END=%d", len(ov_footer), OV_RESERVE_END)
+		return nil, err
+	}
 	if wb, err := init_file(who, ovfh.File_path, ov_footer, true); err != nil {
 		log.Printf("%s ERROR Grow_ov -> init_file2 err='%v'", *who, err)
 		return nil, err
@@ -1709,9 +1793,14 @@ func Grow_ov(who *string, ovfh *OVFH, pages int, blocksize string, mode int) (*O
 	// footer appended
 
 	// 5. reopen mmap file
-	new_ovfh, err := handle_open_ov(who, ovfh.Hash, ovfh.File_path);
-	if err != nil || new_ovfh == nil || new_ovfh.Mmap_handle == nil {
-		log.Printf("%s ERROR Grow_ov -> handle_open_ov ovfh='%v' Mmap_handle='%v 'err='%v'", *who, new_ovfh, new_ovfh.Mmap_handle, err)
+	new_ovfh, err := handle_open_ov(who, ovfh.Hash, ovfh.File_path)
+	if err != nil || new_ovfh == nil {
+		log.Printf("%s ERROR Grow_ov -> handle_open_ov new_ovfh='%v' err='%v'", *who, new_ovfh, err)
+		return nil, err
+	}
+	if new_ovfh.Mmap_handle == nil {
+		err = fmt.Errorf("%s ERROR Grow_ov -> handle_open_ov 5. Mmap_handle=nil", *who)
+		log.Printf("%s", err)
 		return nil, err
 	}
 	// 6. done
@@ -1729,8 +1818,8 @@ func Update_Footer(who *string, ovfh *OVFH, src string) (*OVFH, error) {
 	if DEBUG_OV {
 		log.Printf("%s Update_Footer ovfh.Findex=%d ovfh.Last=%d src=%s", *who, ovfh.Findex, ovfh.Last, src)
 	}
-	ov_footer := construct_footer(who, ovfh)
-	new_ovfh, err, _ := Write_ov(who, ovfh, ov_footer, false, true, false)
+	ov_footer := construct_footer(who, ovfh, "Update_Footer()")
+	new_ovfh, err, _ := Write_ov(who, ovfh, ov_footer, false, true, false, false)
 	if err != nil {
 		log.Printf("%s ERROR Update_Footer -> Write_ov err='%v' src=%s", *who, err, src)
 	} else {
@@ -1743,9 +1832,12 @@ func Update_Footer(who *string, ovfh *OVFH, src string) (*OVFH, error) {
 
 // private overview functions
 
-func construct_footer(who *string, ovfh *OVFH) string {
+func construct_footer(who *string, ovfh *OVFH, src string) string {
 	bodyend := ovfh.Mmap_size - OV_RESERVE_END
 	foot_str := fmt.Sprintf("%s%d,last=%d,Findex=%d,bodyend=%d,fend=%d,zeropad=%s,%s", FOOTER_BEG, utils.Nano(), ovfh.Last, ovfh.Findex, bodyend, bodyend+OV_RESERVE_END, ZERO_PATTERN, FOOTER_END)
+	if DEBUG_OV {
+		log.Printf("%s | construct_footer foot_str='%s' src=%s", *who, foot_str, src)
+	}
 	ov_footer := zerofill(foot_str, OV_RESERVE_END)
 	return ov_footer
 } // end func construct_footer
@@ -1819,16 +1911,16 @@ func init_file(who *string, File_path string, data string, grow bool) (int, erro
 func preload_zero(what string) {
 	if what == "PRELOAD_ZERO_1K" && PRELOAD_ZERO_1K == "" {
 		PRELOAD_ZERO_1K = zerofill(ZERO_PATTERN, 1024)
-		log.Printf("OV PRELOAD_ZERO_1K=%d", len(PRELOAD_ZERO_1K))
+		//log.Printf("OV PRELOAD_ZERO_1K=%d", len(PRELOAD_ZERO_1K))
 	} else if what == "PRELOAD_ZERO_4K" && PRELOAD_ZERO_4K == "" {
 		PRELOAD_ZERO_4K = zerofill_block(4, "1K")
-		log.Printf("OV PRELOAD_ZERO_4K=%d", len(PRELOAD_ZERO_4K))
+		//log.Printf("OV PRELOAD_ZERO_4K=%d", len(PRELOAD_ZERO_4K))
 	} else if what == "PRELOAD_ZERO_128K" && PRELOAD_ZERO_128K == "" {
 		PRELOAD_ZERO_128K = zerofill_block(32, "4K")
-		log.Printf("OV PRELOAD_ZERO_128K=%d", len(PRELOAD_ZERO_128K))
+		//log.Printf("OV PRELOAD_ZERO_128K=%d", len(PRELOAD_ZERO_128K))
 	} else if what == "PRELOAD_ZERO_1M" && PRELOAD_ZERO_1M == "" {
 		PRELOAD_ZERO_1M = zerofill_block(8, "128K")
-		log.Printf("OV PRELOAD_ZERO_1M=%d", len(PRELOAD_ZERO_1M))
+		//log.Printf("OV PRELOAD_ZERO_1M=%d", len(PRELOAD_ZERO_1M))
 	}
 } // end func preload_zero
 
