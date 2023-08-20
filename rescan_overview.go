@@ -57,7 +57,9 @@ func Rescan_Overview(who *string, file_path string, group string, mode int, DEBU
 		log.Printf("ERROR Rescan_OV MMAP_FILE err='%v'", err)
 		return false, 0
 	}
-	defer utils.MMAP_CLOSE(ovfh.File_path, ovfh.File_handle, ovfh.Mmap_handle, "ro")
+
+	//defer utils.MMAP_CLOSE(ovfh.File_path, ovfh.File_handle, ovfh.Mmap_handle, "ro")
+
 	len_mmap := len(ovfh.Mmap_handle)
 
 	if len_mmap < 1024+OV_RESERVE_BEG+OV_RESERVE_END {
