@@ -171,7 +171,7 @@ func (oh *OV_Handler) Park(hid int, who *string, ovfh *OVFH) bool {
 } // end func OV_Handler.Park
 
 func (oh *OV_Handler) Check_idle() {
-	isleep := 250 // milliseconds
+	isleep := 2555 // milliseconds
 	who := "Check_idle()"
 	for {
 		time.Sleep(time.Duration(isleep) * time.Millisecond)
@@ -231,13 +231,12 @@ func (oh *OV_Handler) Check_idle() {
 					time_open := utils.Now() - data.ovfh.Time_open
 					written := data.ovfh.Written
 					oh.V[newdata.ovfh.Hash] = newdata
-					if oh.Debug || lastflush > MAX_FLUSH*2 {
+					if oh.Debug || lastflush > MAX_FLUSH {
 						log.Printf("%s OV Check_Idle: close hash='%s' lastflush=%d time_open=%d written=%d len(oh.V)=%d", who, hash, lastflush, time_open, written, len(oh.V))
 					}
 					//break find_one
 				}
 			}
-
 		} // end for find_idles
 		oh.mux.Unlock()
 

@@ -567,7 +567,6 @@ func Extract_overview(msgid string, header []string) OVL {
 	//header_key, header_key_L, header_dat := "", "", ""
 
 	for i, headline := range header {
-
 		spaced_line := false
 		if len(headline) > 0 {
 			spaced_line = utils.IsSpace(headline[0])
@@ -1999,6 +1998,26 @@ func isvalidmsgid(astring string, silent bool) bool {
 } // end func isvalidmsgid
 
 func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.Conn, initline string, txb *int) ([]*string, error) {
+	if file == nil {
+		return nil, fmt.Errorf("Error Scan_Overview file=nil")
+	}
+	if a == nil || *a < 1 {
+		*a = 1
+	}
+	if b == nil {
+		*b = 0
+	}
+	to_end := false
+    if *b == 0 {
+		to_end = true
+	} else
+	if *b > *a {
+		*b = *a
+	}
+	if fields == nil {
+		*fields = "all"
+	}
+
     var lines []*string
     var sent uint64
     readFile, err := os.Open(*file)
@@ -2010,6 +2029,7 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
     fileScanner := bufio.NewScanner(readFile)
     fileScanner.Split(bufio.ScanLines)
     lc := uint64(0) // linecounter
+
 	if conn != nil {
 		if initline == "" {
 			initline = "224 xover follows"
@@ -2023,77 +2043,93 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 			*txb += tx
 		}
 	}
-    for fileScanner.Scan() {
-        if lc < *a {
-			// pass
-        } else
-        if lc >= *a && lc <= *b {
-            line := fileScanner.Text()
-            ll := len(line)
-            if ll == 0 {
-				break
-			} else
-            if ll > 0 && ll <= 3 {
-				if line[0] == '\x00' || line == "EOV" {
-					log.Printf("break Scan_Overview lc=%d")
-					break
-				}
-			}
-            if *fields == "all" {
-				if conn == nil {
-					lines = append(lines, &line)
-				} else {
-					// conn is set: send lines
-					tx, err := io.WriteString(conn, line+CRLF)
-					if err != nil {
-						return lines, err
-					}
-					sent++
-					if txb != nil {
-						*txb += tx
-					}
-				}
-            } else
-            if *fields == "msgid" {
-                fields := strings.Split(line, "\t")
-                if len(fields) == OVERVIEW_FIELDS {
-					if isvalidmsgid(fields[4], true) {
-						//return &fields[4]
-						lines = append(lines, &fields[4]) // catches message-id field
 
-					} else {
-						log.Printf("Error Scan_Overview file='%s' lc=%d field[4] err='!isvalidmsgid'", filepath.Base(*file), lc)
-						break
-					}
-                } else {
-					log.Printf("Error Scan_Overview file='%s' lc=%d", file, lc)
-					break
-				}
-            } else {
-				log.Printf("Error scan_overview unknown *fields=%s", *fields)
+    for fileScanner.Scan() {
+        if lc == 0 {
+			// pass, ignore first line aka linecount 0: header from overview file
+			lc++
+			continue
+        }
+
+		line := fileScanner.Text()
+		ll := len(line)
+		if ll == 0 {
+			err = fmt.Errorf("break Scan_Overview lc=%d got empty line?!")
+			log.Printf("%s", err)
+			return nil, err
+		}
+
+		if ll > 0 && ll <= 3 {
+			if line[0] == '\x00' || line == "EOV" {
+				log.Printf("break Scan_Overview lc=%d")
 				break
 			}
-        }
-        // finally break out
-        if lc >= *b {
-			// conn is set: send final dot
-			if conn != nil {
-				tx, err := io.WriteString(conn, "."+CRLF)
+		}
+
+		datafields := strings.Split(line, "\t")
+		if len(datafields) != OVERVIEW_FIELDS {
+			err = fmt.Errorf("Error Scan_Overview lc=%d len(fields)=%d != OVERVIEW_FIELDS=%d", lc,len(datafields), OVERVIEW_FIELDS, filepath.Base(*file))
+			log.Printf("%s", err)
+			return nil, err
+		}
+		msgnum := utils.Str2uint64(datafields[0])
+		if msgnum == 0 {
+			err = fmt.Errorf("Error Scan_Overview lc=%d msgnum=0 file='%s'", lc, filepath.Base(*file))
+			log.Printf("%s", err)
+			return nil, err
+		}
+		if msgnum < *a {
+			// msgnum is not in range
+			lc++
+			continue
+		}
+		if !to_end && msgnum > *b {
+			break
+		}
+
+		if !isvalidmsgid(datafields[4], true) {
+			log.Printf("Error Scan_Overview file='%s' lc=%d field[4] err='!isvalidmsgid'", filepath.Base(*file), lc)
+			break
+		}
+
+		if *fields == "all" {
+			if conn == nil {
+				lines = append(lines, &line)
+			} else {
+				// conn is set: send lines
+				tx, err := io.WriteString(conn, line+CRLF)
 				if err != nil {
 					return lines, err
 				}
+				sent++
 				if txb != nil {
 					*txb += tx
-					log.Printf("Scan_Overview file='%s' a=%d b=%d sent=%d txbytes=%d", filepath.Base(*file), *a, *b, sent, *txb)
-				} else {
-					log.Printf("Scan_Overview file='%s' a=%d b=%d sent=%d txbytes=nil", filepath.Base(*file), *a, *b, sent)
 				}
-				return lines, nil
 			}
-            return lines, err
-        }
+		} else
+		if *fields == "msgid" {
+				lines = append(lines, &datafields[4]) // catches message-id field
+		} else {
+			log.Printf("Error scan_overview unknown *fields=%s", *fields)
+			break
+		}
+
         lc++
-    } // end for filescanner
+	} // end for filescanner
+
+	if conn != nil {
+		tx, err := io.WriteString(conn, "."+CRLF)
+		if err != nil {
+			return lines, err
+		}
+		if txb != nil {
+			*txb += tx
+			log.Printf("Scan_Overview file='%s' a=%d b=%d sent=%d txbytes=%d", filepath.Base(*file), *a, *b, sent, *txb)
+		} else {
+			log.Printf("Scan_Overview file='%s' a=%d b=%d sent=%d txbytes=nil", filepath.Base(*file), *a, *b, sent)
+		}
+	}
+
 	log.Printf("Scan_Overview: file='%s' lc=%d", *file, lc)
     return lines, err
 } // end func Scan_Overview
