@@ -2007,12 +2007,12 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 	if b == nil {
 		*b = 0
 	}
-	to_end := false
-    if *b == 0 {
-		to_end = true
-	} else
-	if *b > *a {
-		*b = *a
+	//to_end := false
+    //if *b == 0 {
+	//	to_end = true
+	//} else
+	if *a > *b {
+		return nil, fmt.Errorf("Error Scan_Overview a=%d > b=%d", *a, *b)
 	}
 	if fields == nil {
 		*fields = "all"
@@ -2022,7 +2022,7 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
     var sent uint64
     readFile, err := os.Open(*file)
     if err != nil {
-        log.Printf("Error scan_overview err='%v'", err)
+        log.Printf("Error Scan_Overview os.Open err='%v'", err)
         return lines, err
     }
     defer readFile.Close()
@@ -2043,6 +2043,8 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 			*txb += tx
 		}
 	}
+
+    log.Printf("Scan_Overview: file='%s' a=%d b=%d", filepath.Base(*file), *a, *b)
 
     for fileScanner.Scan() {
         if lc == 0 {
@@ -2068,10 +2070,12 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 
 		datafields := strings.Split(line, "\t")
 		if len(datafields) != OVERVIEW_FIELDS {
-			err = fmt.Errorf("Error Scan_Overview lc=%d len(fields)=%d != OVERVIEW_FIELDS=%d", lc,len(datafields), OVERVIEW_FIELDS, filepath.Base(*file))
+			err = fmt.Errorf("Error Scan_Overview lc=%d len(fields)=%d != OVERVIEW_FIELDS=%d file='%s' line='%s'", lc, len(datafields), OVERVIEW_FIELDS, filepath.Base(*file), line)
 			log.Printf("%s", err)
-			return nil, err
+			//return nil, err
+			break
 		}
+
 		msgnum := utils.Str2uint64(datafields[0])
 		if msgnum == 0 {
 			err = fmt.Errorf("Error Scan_Overview lc=%d msgnum=0 file='%s'", lc, filepath.Base(*file))
@@ -2082,9 +2086,6 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 			// msgnum is not in range
 			lc++
 			continue
-		}
-		if !to_end && msgnum > *b {
-			break
 		}
 
 		if !isvalidmsgid(datafields[4], true) {
@@ -2108,19 +2109,24 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 			}
 		} else
 		if *fields == "msgid" {
-				lines = append(lines, &datafields[4]) // catches message-id field
+			lines = append(lines, &datafields[4]) // catches message-id field
+			log.Printf("Scan_Overview returns a=%d b=%d file='%s' msgid='%s'", *a, *b, filepath.Base(*file), datafields[4])
+			break
 		} else {
 			log.Printf("Error scan_overview unknown *fields=%s", *fields)
 			break
 		}
 
+		if msgnum >= *b {
+			break
+		}
         lc++
 	} // end for filescanner
 
 	if conn != nil {
 		tx, err := io.WriteString(conn, "."+CRLF)
 		if err != nil {
-			return lines, err
+			return nil, err
 		}
 		if txb != nil {
 			*txb += tx
@@ -2130,6 +2136,6 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 		}
 	}
 
-	log.Printf("Scan_Overview: file='%s' lc=%d", *file, lc)
+	log.Printf("END Scan_Overview: file='%s' lc=%d", *file, lc)
     return lines, err
 } // end func Scan_Overview
