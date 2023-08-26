@@ -58,7 +58,7 @@ func Rescan_Overview(who *string, file_path string, group string, mode int, DEBU
 		return false, 0
 	}
 
-	//defer utils.MMAP_CLOSE(ovfh.File_path, ovfh.File_handle, ovfh.Mmap_handle, "ro")
+	defer utils.MMAP_CLOSE(ovfh.File_path, ovfh.File_handle, ovfh.Mmap_handle, "rw")
 
 	len_mmap := len(ovfh.Mmap_handle)
 
@@ -274,6 +274,12 @@ rescan_OV:
 
 					log.Printf(" > END Rescan_OV ov_footer='%s' len=%d  tabs=%d newlines=%d last_newline_pos=%d pos=%d fp='%s'", ov_footer, len(ov_footer), tabs, newlines, last_newline_pos, position, filepath.Base(file_path))
 					if !badfooter {
+						/*
+						if mode != 997 && mode != 998 {
+							return true, last_msgnum
+						} else {
+							break rescan_OV
+						}*/
 						return true, last_msgnum
 					}
 				} else {
