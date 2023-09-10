@@ -6,12 +6,14 @@ import (
 	"github.com/edsrzf/mmap-go"
 	"github.com/go-while/go-utils"
 	"github.com/go-while/nntp-storage"
+	//"encoding/gob"
 	"log"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	//"sync"
 	"time"
 	"unicode"
 )
@@ -23,10 +25,12 @@ const (
 	CR       string = "\r"
 	LF       string = "\n"
 	CRLF     string = CR + LF
+	DOT     string = "."
+	DOTCRLF string = DOT+CRLF
 
 	XREF_PREFIX = "nntp"
 
-	MAX_FLUSH int64 = 5 // flush mmaps every N seconds
+	MAX_FLUSH int64 = 1 // flush mmaps every N seconds
 
 	LIMIT_SPLITMAX_NEWSGROUPS int = 25
 	MAX_REF int = 30
@@ -67,6 +71,7 @@ var (
 	Known_msgids        Known_MessageIDs
 	OV_handler          OV_Handler
 	Overview            OV
+	OVIndex             OverviewIndex
 	open_request_chan   chan Overview_Open_Request
 	close_request_chan  chan Overview_Close_Request
 	//read_request_chan         chan Overview_Read_Request  // FIXME TODO
@@ -193,7 +198,7 @@ func (ov *OV) Load_Overview(maxworkers int, max_queue_size int, max_open_mmaps i
 
 	Overview.more_parallel = more_parallel
 
-	if debug_OV_handler { log.Printf("Start Load_Overview: maxworkers=%d max_queue_size=%d max_open_mmaps=%d known_messageids=%d ov_opener=%d ov_closer=%d, more_parallel=%t, stop_server_chan='%v', debug_OV_handler=%t", maxworkers, max_queue_size, max_open_mmaps, known_messageids, ov_opener, ov_closer, more_parallel, stop_server_chan, debug_OV_handler) }
+	log.Printf("Start Load_Overview: maxworkers=%d max_queue_size=%d max_open_mmaps=%d known_messageids=%d ov_opener=%d ov_closer=%d, more_parallel=%t, stop_server_chan='%v', debug_OV_handler=%t", maxworkers, max_queue_size, max_open_mmaps, known_messageids, ov_opener, ov_closer, more_parallel, stop_server_chan, debug_OV_handler)
 
 	if MAX_Open_overviews_chan == nil {
 		preload_zero("PRELOAD_ZERO_1K")
@@ -212,6 +217,7 @@ func (ov *OV) Load_Overview(maxworkers int, max_queue_size int, max_open_mmaps i
 		}
 
 		if known_messageids > 0 { // setup known_messageids map only if we want to
+			log.Printf("Load_Overview: cache known_messageids=%d", known_messageids)
 			Known_msgids = Known_MessageIDs{
 				v:          make(map[string]bool, known_messageids),
 				Debug:      debug_OV_handler,
@@ -983,7 +989,7 @@ func Split_NewsGroups(msgid string, newsgroups_str string) []string {
 
 	if len(newsgroups) == 0 {
 		//newsgroup = "local.trash"
-		log.Printf("ERROR Split_NewsGroups msgid='%s' input='%s' returned=%d o=%d e=%d len_dirty=%d > local.trash", msgid, newsgroups_str, len(newsgroups), o, e, len_dirty)
+		log.Printf("ERROR Split_NewsGroups msgid='%s' inputX='%x' returned=%d o=%d e=%d len_dirty=%d > local.trash", msgid, newsgroups_str, len(newsgroups), o, e, len_dirty)
 	}
 	return newsgroups
 } // end func Split_NewsGroups
@@ -995,15 +1001,15 @@ func IsValidGroupName(group string) bool {
 	}
 
 	// first char of group has to be a letter or digit and not uppercase
-	for i, r := range group[:1] {
+	for _, r := range group[:1] {
 
 		if unicode.IsUpper(r) {
-			log.Printf("!IsValidGroupName IsUpper i=%d group='%s'", i, group)
+			//log.Printf("!IsValidGroupName IsUpper i=%d group='%s'", i, group)
 			return false
 		}
 
 		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
-			log.Printf("!IsValidGroupName !IsLetter !IsDigit i=%d group='%s'", i, group)
+			//log.Printf("!IsValidGroupName !IsLetter !IsDigit i=%d group='%s'", i, group)
 			return false
 		}
 	}
@@ -1034,7 +1040,7 @@ func IsValidGroupName(group string) bool {
 			if valid {
 				continue loop_check_chars
 			}
-			log.Printf("!IsValidGroupName #3 group='%s' i=%d r=x'%x'", group, i, string(r))
+			log.Printf("!IsValidGroupName #3 groupX='%x' i=%d r=x'%x'", group, i, string(r))
 			return false
 			/*
 				if valid {
@@ -1087,7 +1093,7 @@ func Test_Overview(who *string, file_path string, DEBUG bool) bool {
 func get_hash_from_filename(file_path string) (string, error) {
 	file := filepath.Base(file_path)
 	if !strings.HasSuffix(file, ".overview") {
-		return "", fmt.Errorf("ERROR get_hash_from_file file_path='%s' !HasSuffix .overview", file_path)
+		return "", fmt.Errorf("ERROR get_hash_from_file file_path='%s' !HasSuffix .overview", filepath.Base(file_path))
 	}
 
 	hash := strings.Split(file, ".")[0]
@@ -1492,8 +1498,20 @@ func Write_ov(who *string, ovfh *OVFH, data string, is_head bool, is_foot bool, 
 		if DEBUG_OV {
 			log.Printf("%s Write_ov GROW OVERVIEW Findex=%d len_data=%d freespace=%d bodyend=%d newsize=%d hash='%s'", *who, ovfh.Findex, len_data, freespace, bodyend, newbodysize, ovfh.Hash)
 		}
-
-		new_ovfh, err = Grow_ov(who, ovfh, 1, "128K", 0, delete);
+		pages, blocksize := 1, "128K"
+		if newbodysize < 1024*1024 {
+			pages, blocksize = 1, "4K" // grow by 4K
+		} else
+		if newbodysize >= 1024*1024 && newbodysize < 8*1024*1024 {
+			pages, blocksize = 4, "4K" // grow by 16K
+		} else
+		if newbodysize >= 8*1024*1024 && newbodysize < 32*1024*1024 {
+			pages, blocksize = 8, "4K" // grow by 64K
+		} else
+		if newbodysize >= 32*1024*1024 {
+			pages, blocksize = 1, "128K" // grow by 128K
+		}
+		new_ovfh, err = Grow_ov(who, ovfh, pages, blocksize, 0, delete);
 		if err != nil || new_ovfh == nil || new_ovfh.Mmap_handle == nil || len(new_ovfh.Mmap_handle) == 0 {
 			overflow_err := fmt.Errorf("%s ERROR Write_ovfh -> Grow_ov err='%v' newsize=%d avail=%d mmap_size=%d fp='%s' mmaphandle=%d", *who, err, newbodysize, freespace, new_ovfh.Mmap_size, filepath.Base(new_ovfh.File_path), len(new_ovfh.Mmap_handle))
 			return nil, overflow_err, ERR_OV_OVERFLOW
@@ -1997,62 +2015,77 @@ func isvalidmsgid(astring string, silent bool) bool {
 	return false
 } // end func isvalidmsgid
 
-func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.Conn, initline string, txb *int) ([]*string, error) {
-	if file == nil {
-		return nil, fmt.Errorf("Error Scan_Overview file=nil")
+func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *string, conn net.Conn, initline string, txb *int) ([]*string, error) {
+	if file == nil || a == nil || b == nil {
+		return nil, fmt.Errorf("Error Scan_Overview file=nil||a=nil||b=nil")
 	}
-	if a == nil || *a < 1 {
-		*a = 1
-	}
-	if b == nil {
-		*b = 0
+	index := fmt.Sprintf("%s.Index", *file)
+
+	offset := OVIndex.ReadOverviewIndex(&index, *group, *a, *b)
+
+	if *a < 1 {
+		return nil, fmt.Errorf("Error Scan_Overview a < 1")
 	}
 	//to_end := false
-    //if *b == 0 {
-	//	to_end = true
-	//} else
+	if *b == 0 {
+		//to_end = true
+	} else
 	if *a > *b {
 		return nil, fmt.Errorf("Error Scan_Overview a=%d > b=%d", *a, *b)
 	}
 	if fields == nil {
-		*fields = "all"
+		getfields := "all"
+		fields = &getfields
 	}
 
-    var lines []*string
-    var sent uint64
-    readFile, err := os.Open(*file)
-    if err != nil {
-        log.Printf("Error Scan_Overview os.Open err='%v'", err)
-        return lines, err
-    }
-    defer readFile.Close()
-    fileScanner := bufio.NewScanner(readFile)
-    fileScanner.Split(bufio.ScanLines)
-    lc := uint64(0) // linecounter
+	var lines []*string
+	readFile, err := os.Open(*file)
+	if err != nil {
+		log.Printf("Error Scan_Overview os.Open fp='%s' err='%v'", filepath.Base(*file), err)
+		return lines, err
+	}
+	defer readFile.Close()
+	if offset > 0 {
+		_, err = readFile.Seek(offset, 0)
+		if err != nil {
+			log.Printf("Error Scan_Overview os.Open.Seek fp='%s' offset=%d err='%v'", offset, filepath.Base(*file), err)
+			return nil, err
+		}
+		log.Printf("Scan_Overview SEEK fp='%s' a=%d @offset=%d", filepath.Base(*file), *a, offset)
+	}
+
+	fileScanner := bufio.NewScanner(readFile)
+	maxScan := 4096 // default NewScanner uses 64K buffer
+	buf := make([]byte, maxScan)
+	fileScanner.Buffer(buf, maxScan)
+	fileScanner.Split(bufio.ScanLines)
+	var lc uint64 // linecounter
+	//offset := 0
+	//var offsets []int
+	offsets := make(map[uint64]int64)
+	msgnums := []uint64{}
+	log.Printf("Scan_Overview fp='%s' a=%d b=%d", filepath.Base(*file), *a, *b)
 
 	if conn != nil {
-		if initline == "" {
-			initline = "224 xover follows"
-		}
-		// conn is set: send init line
-		tx, err := io.WriteString(conn, initline+CRLF)
-		if err != nil {
-			return lines, err
-		}
-		if txb != nil {
-			*txb += tx
+		if initline != "" {
+			// conn is set: send init line
+			_, err := io.WriteString(conn, initline+CRLF)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
-    log.Printf("Scan_Overview: file='%s' a=%d b=%d", filepath.Base(*file), *a, *b)
-
-    for fileScanner.Scan() {
-        if lc == 0 {
+	var msgnum uint64
+	for fileScanner.Scan() {
+		if offset <= 0 && lc == 0 {
 			// pass, ignore first line aka linecount 0: header from overview file
 			lc++
+			//if offset <OV_RESERVE_BEG
+			offset += OV_RESERVE_BEG
 			continue
-        }
-
+		}
+		lc++
 		line := fileScanner.Text()
 		ll := len(line)
 		if ll == 0 {
@@ -2061,8 +2094,8 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 			return nil, err
 		}
 
-		if ll > 0 && ll <= 3 {
-			if line[0] == '\x00' || line == "EOV" {
+		if ll >= 0 && ll <= 3 {
+			if line == "" || line[0] == '\x00' || line == "EOV" {
 				log.Printf("break Scan_Overview lc=%d")
 				break
 			}
@@ -2076,15 +2109,23 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 			break
 		}
 
-		msgnum := utils.Str2uint64(datafields[0])
+		msgnum = utils.Str2uint64(datafields[0])
 		if msgnum == 0 {
 			err = fmt.Errorf("Error Scan_Overview lc=%d msgnum=0 file='%s'", lc, filepath.Base(*file))
 			log.Printf("%s", err)
 			return nil, err
 		}
+
+		if *fields == "NewOVI" {
+			offsets[msgnum] = offset
+			offset += int64(ll)+1
+			msgnums = append(msgnums, msgnum)
+			continue
+		}
+
 		if msgnum < *a {
 			// msgnum is not in range
-			lc++
+			//log.Printf("Scan.Overview msgnum=%d < a=%d lc=%d", msgnum, *a, lc)
 			continue
 		}
 
@@ -2093,25 +2134,44 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 			break
 		}
 
-		if *fields == "all" {
+		if *fields == "LISTGROUP" {
+			sendline := fmt.Sprintf("%d %s", msgnum, datafields[4])
+
 			if conn == nil {
-				lines = append(lines, &line)
+				lines = append(lines, &sendline)
+
 			} else {
-				// conn is set: send lines
-				tx, err := io.WriteString(conn, line+CRLF)
+				tx, err := io.WriteString(conn, sendline+CRLF)
 				if err != nil {
-					return lines, err
+					return nil, err
 				}
-				sent++
 				if txb != nil {
 					*txb += tx
 				}
 			}
+
+		} else
+		if *fields == "all" {
+
+			if conn == nil {
+				lines = append(lines, &line)
+
+			} else {
+				tx, err := io.WriteString(conn, line+CRLF)
+				if err != nil {
+					return nil, err
+				}
+				if txb != nil {
+					*txb += tx
+				}
+			}
+
 		} else
 		if *fields == "msgid" {
 			lines = append(lines, &datafields[4]) // catches message-id field
 			log.Printf("Scan_Overview returns a=%d b=%d file='%s' msgid='%s'", *a, *b, filepath.Base(*file), datafields[4])
 			break
+
 		} else {
 			log.Printf("Error scan_overview unknown *fields=%s", *fields)
 			break
@@ -2120,22 +2180,44 @@ func Scan_Overview(file *string, a *uint64, b *uint64, fields *string, conn net.
 		if msgnum >= *b {
 			break
 		}
-        lc++
+
 	} // end for filescanner
 
-	if conn != nil {
-		tx, err := io.WriteString(conn, "."+CRLF)
-		if err != nil {
-			return nil, err
+	if *fields == "NewOVI" {
+		indexSize := 100 // gets offsets for every 100 overview entries
+		tmp_offsets := make(map[uint64]int64, indexSize)
+		tmp_msgnums := []uint64{}
+		for _, msgnum := range msgnums {
+			if len(tmp_offsets) >= indexSize {
+				WriteOverviewIndex(file, tmp_msgnums, tmp_offsets)
+				tmp_msgnums = nil
+				tmp_offsets = make(map[uint64]int64, indexSize)
+			}
+			tmp_msgnums = append(tmp_msgnums, msgnum)
+			tmp_offsets[msgnum] = offsets[msgnum]
 		}
+		if len(tmp_offsets) > 0 && len(tmp_msgnums) == len(tmp_offsets) {
+			WriteOverviewIndex(file, tmp_msgnums, tmp_offsets)
+		}
+		return nil, nil
+	} // end NewINDEX
+
+	if conn != nil {
+		//if *fields == "all" || *fields == "LISTGROUP" {
+			tx, err := io.WriteString(conn, DOTCRLF)
+			if err != nil {
+				return nil, err
+			}
+		//}
 		if txb != nil {
 			*txb += tx
-			log.Printf("Scan_Overview file='%s' a=%d b=%d sent=%d txbytes=%d", filepath.Base(*file), *a, *b, sent, *txb)
-		} else {
-			log.Printf("Scan_Overview file='%s' a=%d b=%d sent=%d txbytes=nil", filepath.Base(*file), *a, *b, sent)
 		}
+
+		lines = nil
 	}
 
-	log.Printf("END Scan_Overview: file='%s' lc=%d", *file, lc)
-    return lines, err
+	return lines, err
 } // end func Scan_Overview
+
+
+
