@@ -99,9 +99,10 @@ func Rescan_Overview(who *string, file_path string, group string, mode int, DEBU
 		return true, 0
 	}
 
-	line, lines, newlines, tabs, frees, position := "", uint64(0), 0, 0, 0, OV_RESERVE_BEG
-	last_line, last_msgnum, last_newlines, last_tabs, last_beg, last_newline_pos := line, lines, newlines, tabs, position, position
-	uniq_msgids := make(map[string]uint64)
+	line, lines, newlines, tabs, frees, position := "", 0, 0, 0, 0, OV_RESERVE_BEG
+	var last_msgnum uint64
+	last_line, last_newlines, last_tabs, last_beg, last_newline_pos := line, newlines, tabs, position, position
+	uniq_msgids := make(map[string]int)
 	var list_msgids []string
 	badfooter := false
 
@@ -316,10 +317,12 @@ rescan_OV:
 				}
 				lines++ // raise overview line counter
 				msgnum = utils.Str2uint64(fields[0])
+				/*
 				if msgnum != lines {
 					log.Printf("ERROR Rescan_OV#4 @line=%d msgnum=%d", lines, msgnum)
 					return false, 0
-				}
+				}*/
+
 				// be verbose for every line in overview
 				if DEBUG_OV {
 					log.Printf(" ----> Rescan: line=%d msgnum=%d tabs=%d newslines=%d len=%d pos=%d last_newline_pos=%d", lines, msgnum, tabs, newlines, len(line), position, last_newline_pos)
@@ -413,7 +416,7 @@ rescan_OV:
 							return false, 0
 						}
 						xrefmsgnum := utils.Str2uint64(xrefdata[1])
-						if xrefmsgnum != msgnum {
+						if xrefmsgnum == 0 || xrefmsgnum != msgnum {
 							log.Printf("ERROR Rescan_OV#7c @line=%d axref xrefmsgnum=%d != msgnum=%d", lines, xrefmsgnum, msgnum)
 							return false, 0
 						}
