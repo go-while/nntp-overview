@@ -14,7 +14,7 @@ type OV_Handler_data struct {
 	hid     int   // overview mmap is assigned to handler id
 	preopen bool  // overview mmap is opening
 	open    bool  // overview mmap is open
-	idle    int64 // overview mmap is idle since unix timestamp
+	idle    int64 // holds unix timestamp: is idle since
 }
 
 type OV_Handler struct {
