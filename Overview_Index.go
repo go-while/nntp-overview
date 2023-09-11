@@ -179,11 +179,11 @@ func (ovi *OverviewIndex) SetOVIndexCacheOffset(group string, fnum uint64, offse
 	// check if map is full
 	if len(ovi.IndexMap[group]) == ovi.IndexCacheSize {
 		delgroup := ovi.IndexCache[0]
-		ovi.IndexCache = ovi.IndexCache[1:]
+		ovi.IndexCache = ovi.IndexCache[1:] // pops [0]
 		if delgroup != group {
-			delete(ovi.IndexMap, ovi.IndexCache[0])
+			delete(ovi.IndexMap, delgroup)
 		} else {
-			ovi.IndexCache = append(ovi.IndexCache, delgroup) // re-append
+			ovi.IndexCache = append(ovi.IndexCache, delgroup) // re-append to top
 		}
 
 	}
