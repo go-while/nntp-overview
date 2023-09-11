@@ -109,6 +109,10 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file *string, group string, a uint64
 	fileScanner.Split(bufio.ScanLines)
 	lc := 0
 	log.Printf("ReadOverviewIndex groups='%s' SCAN a=%d", group, a)
+	var prev_xa uint64
+	//var prev_xb uint64
+	var prev_xy int64
+	//var prev_xz int64
 	for fileScanner.Scan() {
 		lc++
 		line := fileScanner.Text()
@@ -147,13 +151,26 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file *string, group string, a uint64
 			log.Printf("Error ReadOverviewIndex groups='%s' fp='%s' DECODE ERROR3 lc=%d", group, filepath.Base(*file), lc)
 			break
 		}
-		log.Printf("ROVI group='%s' a=%d x_a=%d x_b=%d x_y=%d", group, a, x_a, x_b, x_y)
-		//x_z := utils.Str2int(x[4])
+		x_z := utils.Str2int64(x[4])
+		if x_z == 0 {
+			log.Printf("Error ReadOverviewIndex groups='%s' fp='%s' DECODE ERROR4 lc=%d", group, filepath.Base(*file), lc)
+			break
+		}
+		if DEBUG_OV { log.Printf("ROVI group='%s' a=%d x_a=%d x_b=%d x_y=%d x_z=%d", group, a, x_a, x_b, x_y, x_y) }
 		if a >= x_a && a <= x_b {
+			if prev_xa > 0 && prev_xy > 0 {
+				OVIndex.SetOVIndexCacheOffset(group, prev_xa, prev_xy)
+				//OVIndex.SetOVIndexCacheOffset(group, prev_xb, prev_xz)
+			}
 			OVIndex.SetOVIndexCacheOffset(group, x_a, x_y)
+			//OVIndex.SetOVIndexCacheOffset(group, x_b, x_z)
 			offset = x_y
 			break
 		}
+		prev_xa = x_a
+		//prev_xb = x_b
+		prev_xy = x_y
+		//prev_xz = x_z
 		//a, b, y, z = utils.Str2int(x[1]), utils.Str2int(x[2]), utils.Str2int(x[3]), utils.Str2int(x[4])
 		//}
 	}
@@ -200,14 +217,13 @@ func (ovi *OverviewIndex) GetOVIndexCacheOffset(group string, a uint64) int64 {
 	}
 	// offets are created for every 100 messages in overview
 	// 1|100|offset1|offset2
-	// 1|100|offset1|offset2
 	// 101|200|offset1|offset2
 	// 201|300|offset1|offset2
 	// floor 'a' to full 100+1
 	// example: a=151 floors to 101
 	//          a=1234 floors to 1201
 	floored := ((a / 100) * 100) + 1
-	log.Printf("Try GetOVIndexCacheOffset group='%s' a=%d f=%d", group, a, floored)
+	log.Printf("Try GetOVIndexCacheOffset group='%s' a=%d floored=%d", group, a, floored)
 
 	var offset int64
 	ovi.mux.RLock()
