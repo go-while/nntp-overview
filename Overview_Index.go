@@ -101,7 +101,9 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file *string, group string, a uint64
 		return offset
 	}
 	fileScanner := bufio.NewScanner(fh)
-	maxScan := 64 // default NewScanner uses 64K buffer
+	// default NewScanner uses 64K buffer
+	// we asume an index line in file not to be longer than 128 bytes incl LF
+	maxScan := 128
 	buf := make([]byte, maxScan)
 	fileScanner.Buffer(buf, maxScan)
 	fileScanner.Split(bufio.ScanLines)
@@ -174,6 +176,7 @@ func (ovi *OverviewIndex) SetOVIndexCacheOffset(group string, fnum uint64, offse
 		ovi.IndexMap = make(map[string]map[uint64]int64, ovi.IndexCacheSize)
 	}
 	if ovi.IndexMap[group] == nil {
+		// memoryleak! map without limit caches infinite amount of index offsets for group
 		ovi.IndexMap[group] = make(map[uint64]int64)
 	}
 	// check if map is full
@@ -195,6 +198,14 @@ func (ovi *OverviewIndex) GetOVIndexCacheOffset(group string, a uint64) int64 {
 	if a < 101 {
 		return 0
 	}
+	// offets are created for every 100 messages in overview
+	// 1|100|offset1|offset2
+	// 1|100|offset1|offset2
+	// 101|200|offset1|offset2
+	// 201|300|offset1|offset2
+	// floor 'a' to full 100+1
+	// example: a=151 floors to 101
+	//          a=1234 floors to 1201
 	floored := ((a / 100) * 100) + 1
 	log.Printf("Try GetOVIndexCacheOffset group='%s' a=%d f=%d", group, a, floored)
 
@@ -215,3 +226,26 @@ func (ovi *OverviewIndex) GetOVIndexCacheOffset(group string, a uint64) int64 {
 	}
 	return 0
 } // func GetOVIndexCacheOffset
+
+func (ovi *OverviewIndex) MemDropIndexCache(group string, fnum uint64) {
+	log.Printf("MemDropIndexCache group='%s' fnum=%d", group, fnum)
+	ovi.mux.Lock()
+	defer ovi.mux.Unlock()
+	if group == "" {
+		// drop all cached index offsets
+		ovi.IndexMap = make(map[string]map[uint64]int64, ovi.IndexCacheSize)
+		ovi.IndexCache = []string{}
+	} else {
+		// drop index cache for group
+		switch fnum {
+			case 0:
+				// fnum is not set
+				// memoryleak! map without limit caches infinite amount of index offsets for group
+				ovi.IndexMap[group] = make(map[uint64]int64)
+			default:
+				if fnum > 0 {
+					delete(ovi.IndexMap[group] , fnum)
+				}
+		}
+	}
+}
