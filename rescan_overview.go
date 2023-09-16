@@ -76,7 +76,6 @@ func Rescan_Overview(who *string, file_path string, group string, mode int, DEBU
 
 	log.Printf(" --> rescan_OV mode=%d len=%d startindex=%d", mode, len_mmap, startindex)
 
-
 	if mode == 0 || mode == 1 || mode == 997 || mode == 998 {
 		ov_header_line := string(ovfh.Mmap_handle[:OV_RESERVE_BEG])
 		if retbool := check_ovfh_header(who, ov_header_line); retbool == false {
@@ -122,30 +121,32 @@ rescan_OV:
 
 		case '\n':
 			newlines++
-			if DEBUG_OV { log.Printf(" --> Rescan_OV got newline@i=%d tabs=%d newlines=%d fp='%s'", i, tabs, newlines, filepath.Base(file_path)) }
+			if DEBUG_OV {
+				log.Printf(" --> Rescan_OV got newline@i=%d tabs=%d newlines=%d fp='%s'", i, tabs, newlines, filepath.Base(file_path))
+			}
 
 			// found frees: <nul> bytes
 			if frees > 0 {
 				log.Printf(" --> Rescan_OV frees=%d@i=%d tabs=%d newlines=%d fp='%s'", frees, i, tabs, newlines, filepath.Base(file_path))
 				/*
-				// if we found a nul byte there should only be nuls after
-				// check this + next 5 bytes for \nEOV\n (BODY_END)
-				// further check FOOTER_BEG and verify content from 'time=....,zeropad=,\nEOF\n'
+					// if we found a nul byte there should only be nuls after
+					// check this + next 5 bytes for \nEOV\n (BODY_END)
+					// further check FOOTER_BEG and verify content from 'time=....,zeropad=,\nEOF\n'
 
-				to := i + 5
-				if to > len_mmap-1 {
-					log.Printf("ERROR Rescan_OV#0a frees=%d pos=%d i=%d to=%d len_mmap=%d reached end-of-file ... footer missing?", frees, position, i, to, len_mmap)
-					if mode == 999 {
-						fix_flag = "fix-footer"
-						break rescan_OV
+					to := i + 5
+					if to > len_mmap-1 {
+						log.Printf("ERROR Rescan_OV#0a frees=%d pos=%d i=%d to=%d len_mmap=%d reached end-of-file ... footer missing?", frees, position, i, to, len_mmap)
+						if mode == 999 {
+							fix_flag = "fix-footer"
+							break rescan_OV
+						}
+						return false, 0
 					}
-					return false, 0
-				}
-				check_str := string(ovfh.Mmap_handle[i:to])
-				if check_str != BODY_END {
-					log.Printf("ERROR Rescan OV#0b check_str='%s'", check_str)
-					return false, 0
-				}
+					check_str := string(ovfh.Mmap_handle[i:to])
+					if check_str != BODY_END {
+						log.Printf("ERROR Rescan OV#0b check_str='%s'", check_str)
+						return false, 0
+					}
 				*/
 				// 2023/08/09 09:00:00  ----> Rescan: line=129 msgnum=129 tabs=8 newslines=1 len=131 pos=18545 last_newline_pos=18545
 				// 2023/08/09 09:00:01  --> Rescan_OV frees=115854@i=134400 tabs=0 newlines=1 fp='86a45af09f021b0b9c8859a82392b09292d2ad31a66483fd811eb8910d12b5a2.overview'
@@ -157,7 +158,7 @@ rescan_OV:
 				from := i
 				end := len_mmap - 1 - 3
 				rem := string(ovfh.Mmap_handle[from : end-1]) // from to before the 'EOF'
-				eof := string(ovfh.Mmap_handle[end-1:])     // should be '\nEOF\n'
+				eof := string(ovfh.Mmap_handle[end-1:])       // should be '\nEOF\n'
 				log.Printf(" ** from i=%d from=%d end=%d eof='%s' rem='%s'", i, from, end, eof, rem)
 				// check rem string backwards for <nul>,
 				if rem[len(rem)-2] == 0 && rem[len(rem)-1] == ',' && eof == FOOTER_END {
@@ -236,7 +237,6 @@ rescan_OV:
 					last_modified := (utils.Nano() - f_time) / 1e9
 					log.Printf(" --> Rescan_OV footer f_time=%d age=%d fp='%s'", f_time/1e9, last_modified, filepath.Base(file_path))
 
-
 					if f_last == 0 || f_last-1 != last_msgnum {
 
 						if mode != 999 {
@@ -272,15 +272,14 @@ rescan_OV:
 						log.Printf(" --> Rescan_OV footer f_zero=%d fp='%s'", f_zero, filepath.Base(file_path))
 					}
 
-
 					log.Printf(" > END Rescan_OV ov_footer='%s' len=%d  tabs=%d newlines=%d last_newline_pos=%d pos=%d fp='%s'", ov_footer, len(ov_footer), tabs, newlines, last_newline_pos, position, filepath.Base(file_path))
 					if !badfooter {
 						/*
-						if mode != 997 && mode != 998 {
-							return true, last_msgnum
-						} else {
-							break rescan_OV
-						}*/
+							if mode != 997 && mode != 998 {
+								return true, last_msgnum
+							} else {
+								break rescan_OV
+							}*/
 						return true, last_msgnum
 					}
 				} else {
@@ -302,8 +301,6 @@ rescan_OV:
 				continue rescan_OV
 			}
 
-
-
 			var fields []string
 			var msgnum uint64
 
@@ -318,10 +315,10 @@ rescan_OV:
 				lines++ // raise overview line counter
 				msgnum = utils.Str2uint64(fields[0])
 				/*
-				if msgnum != lines {
-					log.Printf("ERROR Rescan_OV#4 @line=%d msgnum=%d", lines, msgnum)
-					return false, 0
-				}*/
+					if msgnum != lines {
+						log.Printf("ERROR Rescan_OV#4 @line=%d msgnum=%d", lines, msgnum)
+						return false, 0
+					}*/
 
 				// be verbose for every line in overview
 				if DEBUG_OV {
@@ -330,7 +327,7 @@ rescan_OV:
 				last_msgnum = msgnum
 				//last_line = line
 			} else {
-				log.Printf("WARN Rescan_OV#2 @line=%d found newline but tabs=%d startindex=%d pos=%d i=%d frees=%d end=%d ovfh.Mmap_handle=%d line='%s'", lines, tabs, startindex, position, i ,frees, len(ovfh.Mmap_handle)-1, len(ovfh.Mmap_handle), line)
+				log.Printf("WARN Rescan_OV#2 @line=%d found newline but tabs=%d startindex=%d pos=%d i=%d frees=%d end=%d ovfh.Mmap_handle=%d line='%s'", lines, tabs, startindex, position, i, frees, len(ovfh.Mmap_handle)-1, len(ovfh.Mmap_handle), line)
 				//return false
 			}
 
@@ -437,7 +434,6 @@ rescan_OV:
 
 	} // end for rescan_OV
 
-
 	var gibb int
 	toend := len_mmap - position
 	last_end := last_beg + len(last_line)
@@ -447,7 +443,7 @@ rescan_OV:
 	}
 
 	str_last := fmt.Sprintf("last[ msgnum=%d newlines=%d tabs=%d beg=%d len=%d end=%d ]",
-			last_msgnum, last_newlines, last_tabs, last_beg, len(last_line), last_end)
+		last_msgnum, last_newlines, last_tabs, last_beg, len(last_line), last_end)
 	log.Printf(" ---> result OV lines=%d %s", lines, str_last)
 
 	if badfooter {
@@ -459,7 +455,7 @@ rescan_OV:
 			log.Printf(" ---> position=%d/%d toend=%d != OV_RESERVE_END=%d", position, len_mmap, toend, OV_RESERVE_END)
 		}
 		log.Printf(" ---> badfooter=%t", badfooter)
-		log.Printf(" ---> end_body=%d", last_newline_pos - frees)
+		log.Printf(" ---> end_body=%d", last_newline_pos-frees)
 		log.Printf(" ---> last_newline_pos=%d toend=%d", last_newline_pos, len_mmap-last_newline_pos)
 
 		if newlines == 0 || tabs != OVERVIEW_TABS {
@@ -500,7 +496,6 @@ rescan_OV:
 	// fix-footer
 	if mode == 999 && badfooter && fix_flag == "fix-footer" {
 
-
 		new_ovfh := &OVFH{}
 		//ovfh.File_path = file_path
 		//ovfh.File_handle = file_handle
@@ -515,7 +510,7 @@ rescan_OV:
 
 		log.Printf("Rescan_OV badfooter -> fix-footer: last_msgnum=%d ovfh.Findex=%d", last_msgnum, ovfh.Findex)
 
-		new_ovfh, err = Grow_ov(&who, ovfh, 1, "1K", mode, delete);
+		new_ovfh, err = Grow_ov(&who, ovfh, 1, "1K", mode, delete)
 		if err != nil {
 			log.Printf("ERROR Rescan_OV -> fix-footer -> Grow_ov ovfh='%v' err='%v'", ovfh, err)
 			return false, 0
