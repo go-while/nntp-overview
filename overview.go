@@ -7,8 +7,8 @@ import (
 	"github.com/go-while/go-utils"
 	"github.com/go-while/nntp-storage"
 	//"encoding/gob"
-	"log"
 	"io"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -25,15 +25,15 @@ const (
 	CR       string = "\r"
 	LF       string = "\n"
 	CRLF     string = CR + LF
-	DOT     string = "."
-	DOTCRLF string = DOT+CRLF
+	DOT      string = "."
+	DOTCRLF  string = DOT + CRLF
 
 	XREF_PREFIX = "nntp"
 
 	MAX_FLUSH int64 = 1 // flush mmaps every N seconds
 
 	LIMIT_SPLITMAX_NEWSGROUPS int = 25
-	MAX_REF int = 30
+	MAX_REF                   int = 30
 
 	SIZEOF_FOOT     int = 7
 	OVL_CHECKSUM    int = 5
@@ -88,12 +88,12 @@ type Overview_Open_Request struct {
 
 type Overview_Close_Request struct {
 	force_close bool                // will be set to true if this overview has to be closed
-	ovfh        *OVFH                // overview mmap file handle struct
+	ovfh        *OVFH               // overview mmap file handle struct
 	reply_chan  chan Overview_Reply // replies back with the 'OVFH' or err
 }
 
 type Overview_Reply struct {
-	ovfh    *OVFH  // overview mmap file handle struct
+	ovfh    *OVFH // overview mmap file handle struct
 	err     error // return error
 	retbool bool  // returns a bool
 }
@@ -247,8 +247,8 @@ func (ov *OV) Load_Overview(maxworkers int, max_queue_size int, max_open_mmaps i
 		}
 
 		if debug_OV_handler {
-		log.Printf("Load_Overview maxworkers=%d, max_queue_size=%d, max_open_mmaps=%d, known_messageids=%d, ov_opener=%d, ov_closer=%d, stop_server_chan='%v' debug_OV_handler=%t len(MAX_Open_overviews_chan)=%d",
-			maxworkers, max_queue_size, max_open_mmaps, known_messageids, ov_opener, ov_closer, stop_server_chan, debug_OV_handler, len(MAX_Open_overviews_chan))
+			log.Printf("Load_Overview maxworkers=%d, max_queue_size=%d, max_open_mmaps=%d, known_messageids=%d, ov_opener=%d, ov_closer=%d, stop_server_chan='%v' debug_OV_handler=%t len(MAX_Open_overviews_chan)=%d",
+				maxworkers, max_queue_size, max_open_mmaps, known_messageids, ov_opener, ov_closer, stop_server_chan, debug_OV_handler, len(MAX_Open_overviews_chan))
 		}
 		workers_done_chan = make(chan int, maxworkers)
 		Overview.OVIC = make(chan OVL, max_queue_size) // one input_channel to serve them all with cap of max_queue_size
@@ -292,32 +292,30 @@ forever:
 	for {
 		time.Sleep(1 * time.Second)
 
-		workers_done := len(workers_done_chan)               // int
-		open_overviews := len(count_open_overviews)          // int
-		queued_overviews := len(Overview.OVIC)               // int
-		rc_head_chan := len(storage.WriteCache.WC_head_chan) // int
-		wc_head_chan := len(storage.ReadCache.RC_head_chan)  // int
-		wc_body_chan := len(storage.WriteCache.WC_body_chan) // int
-		rc_body_chan := len(storage.ReadCache.RC_body_chan)  // int
-		cache_history := len(storage.WriteCache.Log_cache_history_chan)		 // int
-		xrefs := len(storage.XrefLinker.Xref_link_chan)      // int
-		all_ov_workers_done := workers_done == maxworkers    // bool
-		logstr = fmt.Sprintf("workers_done=%d/%d open_overviews=%d queued_overviews=%d wc_head_chan=%d wc_body_chan=%d rc_head_chan=%d rc_body_chan=%d cache_history=%d xrefs=%d", workers_done, maxworkers, open_overviews, queued_overviews, wc_head_chan, wc_body_chan, rc_head_chan, rc_body_chan, cache_history ,xrefs)
-
-
+		workers_done := len(workers_done_chan)                          // int
+		open_overviews := len(count_open_overviews)                     // int
+		queued_overviews := len(Overview.OVIC)                          // int
+		rc_head_chan := len(storage.WriteCache.WC_head_chan)            // int
+		wc_head_chan := len(storage.ReadCache.RC_head_chan)             // int
+		wc_body_chan := len(storage.WriteCache.WC_body_chan)            // int
+		rc_body_chan := len(storage.ReadCache.RC_body_chan)             // int
+		cache_history := len(storage.WriteCache.Log_cache_history_chan) // int
+		xrefs := len(storage.XrefLinker.Xref_link_chan)                 // int
+		all_ov_workers_done := workers_done == maxworkers               // bool
+		logstr = fmt.Sprintf("workers_done=%d/%d open_overviews=%d queued_overviews=%d wc_head_chan=%d wc_body_chan=%d rc_head_chan=%d rc_body_chan=%d cache_history=%d xrefs=%d", workers_done, maxworkers, open_overviews, queued_overviews, wc_head_chan, wc_body_chan, rc_head_chan, rc_body_chan, cache_history, xrefs)
 
 		// check if everything is empty
 		if open_overviews == 0 && queued_overviews == 0 &&
 			wc_head_chan == 0 && wc_body_chan == 0 &&
 			rc_head_chan == 0 && rc_body_chan == 0 &&
 			cache_history == 0 && xrefs == 0 {
-				if !closed_Overview_OVIC {
-					close(Overview.OVIC)
-					closed_Overview_OVIC = true
-				}
-				if all_ov_workers_done {
-					break forever
-				}
+			if !closed_Overview_OVIC {
+				close(Overview.OVIC)
+				closed_Overview_OVIC = true
+			}
+			if all_ov_workers_done {
+				break forever
+			}
 		}
 		log.Printf("WAIT Watch_overview_Workers %s", logstr)
 	}
@@ -331,7 +329,7 @@ func notify_workers_done_chan(ov_wid int) {
 }
 
 func (ov *OV) overview_Worker(ov_wid int) {
-	who := fmt.Sprintf("OVW:%d",ov_wid)
+	who := fmt.Sprintf("OVW:%d", ov_wid)
 	did, max := 0, 10000
 	//log.Printf("%s Alive", who)
 
@@ -482,7 +480,7 @@ func Construct_OVL(ovl OVL) string {
 			break
 		}
 		if i >= MAX_REF {
-			log.Printf("BREAK Construct_OVL new_ref_len=%d msgid='%s' i=%d/%d", new_ref_len, ovl.Messageid, i ,len(ovl.References))
+			log.Printf("BREAK Construct_OVL new_ref_len=%d msgid='%s' i=%d/%d", new_ref_len, ovl.Messageid, i, len(ovl.References))
 			break
 		}
 		references = references + " " + ref
@@ -875,15 +873,15 @@ func Cleanup_NewsGroups_String(newsgroup string) string {
 	}
 
 	/*
-	// checking newsgroup compontents
-	components := strings.Split(newsgroup, ".")
-	for _, comp := range components {
-		if utils.IsDigit(comp) {
-			// component must not contain only numbers, causes issues with inn2 tradspool?storage??
-			// why is this our problem? our spool doesn't have this problem.
-			return ""
+		// checking newsgroup compontents
+		components := strings.Split(newsgroup, ".")
+		for _, comp := range components {
+			if utils.IsDigit(comp) {
+				// component must not contain only numbers, causes issues with inn2 tradspool?storage??
+				// why is this our problem? our spool doesn't have this problem.
+				return ""
+			}
 		}
-	}
 	*/
 
 	/*
@@ -1074,7 +1072,7 @@ func Test_Overview(who *string, file_path string, DEBUG bool) bool {
 		return false
 	}*/
 	if ovfh, err := Open_ov(who, file_path); err != nil {
-	//if ovfh, err := handle_open_ov(who, hash, file_path); err != nil {
+		//if ovfh, err := handle_open_ov(who, hash, file_path); err != nil {
 		log.Printf("%s ERROR OV TEST_Overview Open_ov err='%v' fp='%s'", *who, err, filepath.Base(file_path))
 		return false
 
@@ -1176,7 +1174,9 @@ func handle_open_ov(who *string, hash string, file_path string) (*OVFH, error) {
 
 	time_open, time_flush, written := utils.Now(), utils.Now(), 0
 
-	if DEBUG_OV { log.Printf("%s handle_open_ov new OVFH fp='%s'", *who, file_path) }
+	if DEBUG_OV {
+		log.Printf("%s handle_open_ov new OVFH fp='%s'", *who, file_path)
+	}
 	ovfh := &OVFH{} // { file_path, file_handle, mmap_handle, mmap_size, time_open, time_flush, written, 0, 0 }
 	ovfh.File_path = file_path
 	ovfh.File_handle = file_handle
@@ -1233,7 +1233,9 @@ func handle_open_ov(who *string, hash string, file_path string) (*OVFH, error) {
 	ovfh.Findex = findex
 	ovfh.Last = last
 	if Replay_Footer(who, ovfh) {
-		if DEBUG_OV { log.Printf("%s handle_open_ov -> Replay_Footer OK fp='%s'", *who, file_path) }
+		if DEBUG_OV {
+			log.Printf("%s handle_open_ov -> Replay_Footer OK fp='%s'", *who, file_path)
+		}
 		return ovfh, nil
 	} else {
 		log.Printf("%s ERROR handle_open_ov -> !Replay_Footer fp='%s'", *who, file_path)
@@ -1323,7 +1325,7 @@ func Flush_ov(who *string, ovfh *OVFH) error {
 	return err
 } // end func Flush_ov
 
-func Replay_Footer(who *string, ovfh *OVFH) (bool) {
+func Replay_Footer(who *string, ovfh *OVFH) bool {
 
 	if ovfh.Last == 0 && ovfh.Findex == OV_RESERVE_BEG {
 		if DEBUG_OV {
@@ -1501,23 +1503,20 @@ func Write_ov(who *string, ovfh *OVFH, data string, is_head bool, is_foot bool, 
 		pages, blocksize := 1, "128K"
 		if newbodysize < 1024*1024 {
 			pages, blocksize = 1, "4K" // grow by 4K
-		} else
-		if newbodysize >= 1024*1024 && newbodysize < 8*1024*1024 {
+		} else if newbodysize >= 1024*1024 && newbodysize < 8*1024*1024 {
 			pages, blocksize = 4, "4K" // grow by 16K
-		} else
-		if newbodysize >= 8*1024*1024 && newbodysize < 32*1024*1024 {
+		} else if newbodysize >= 8*1024*1024 && newbodysize < 32*1024*1024 {
 			pages, blocksize = 8, "4K" // grow by 64K
-		} else
-		if newbodysize >= 32*1024*1024 {
+		} else if newbodysize >= 32*1024*1024 {
 			pages, blocksize = 1, "128K" // grow by 128K
 		}
-		new_ovfh, err = Grow_ov(who, ovfh, pages, blocksize, 0, delete);
+		new_ovfh, err = Grow_ov(who, ovfh, pages, blocksize, 0, delete)
 		if err != nil || new_ovfh == nil || new_ovfh.Mmap_handle == nil || len(new_ovfh.Mmap_handle) == 0 {
 			overflow_err := fmt.Errorf("%s ERROR Write_ovfh -> Grow_ov err='%v' newsize=%d avail=%d mmap_size=%d fp='%s' mmaphandle=%d", *who, err, newbodysize, freespace, new_ovfh.Mmap_size, filepath.Base(new_ovfh.File_path), len(new_ovfh.Mmap_handle))
 			return nil, overflow_err, ERR_OV_OVERFLOW
 		}
 		if DEBUG_OV {
-			log.Printf("%s Write_ov DONE GROW OVERVIEW hash='%s'", *who , ovfh.Hash)
+			log.Printf("%s Write_ov DONE GROW OVERVIEW hash='%s'", *who, ovfh.Hash)
 		}
 		if new_ovfh != nil && new_ovfh.Mmap_handle != nil {
 			ovfh = new_ovfh
@@ -1544,15 +1543,14 @@ func Write_ov(who *string, ovfh *OVFH, data string, is_head bool, is_foot bool, 
 			ovfh.Mmap_handle[index] = abyte
 			index++
 		}
-	} else
-	if is_foot && data == "" && grow == true && delete {
+	} else if is_foot && data == "" && grow == true && delete {
 		if ovfh.Mmap_handle == nil || (ovfh.Mmap_size != len(ovfh.Mmap_handle) || (ovfh.Mmap_range != len(ovfh.Mmap_handle)-1)) {
 			err = fmt.Errorf("%s ERROR Write_ov is_foot data='' grow=true Findex=%d ovfh.Mmap_size=%d Mmap_handle=%d fp='%s'", *who, ovfh.Findex, ovfh.Mmap_size, len(ovfh.Mmap_handle), filepath.Base(ovfh.File_path))
 			return nil, err, ""
 		}
 		// zerofill-overwrite the footer space
 		index := ovfh.Findex
-		databyte := []byte(zerofill(ZERO_PATTERN, ovfh.Mmap_size - index))
+		databyte := []byte(zerofill(ZERO_PATTERN, ovfh.Mmap_size-index))
 		// writes data to mmap byte for byte
 		for pos, abyte := range databyte {
 			if index >= ovfh.Mmap_size {
@@ -1566,7 +1564,6 @@ func Write_ov(who *string, ovfh *OVFH, data string, is_head bool, is_foot bool, 
 			index++
 		}
 		log.Printf(" --> wrote databyte ovfh.Findex=%d index=%d/%d bytes=%d delete=%t", ovfh.Findex, index, ovfh.Mmap_range, len(databyte), delete)
-
 
 	} else if is_foot && data != "" { // footer data is not empty, write footer
 		startindex := ovfh.Mmap_size - OV_RESERVE_END
@@ -1590,7 +1587,6 @@ func Write_ov(who *string, ovfh *OVFH, data string, is_head bool, is_foot bool, 
 		if DEBUG_OV {
 			log.Printf("%s Write_ov #346 data=%d Findex=%d limit=%d range=%d handle=%d fp='%s' delete=%t", *who, len(data), startindex, limit, ovfh.Mmap_range, len(ovfh.Mmap_handle), filepath.Base(ovfh.File_path), delete)
 		}
-
 
 		// writes data to mmap byte for byte
 		for _, abyte := range databyte {
@@ -1681,7 +1677,9 @@ func Create_ov(who *string, File_path string, hash string, pages int) error {
 	}
 	wbt += wb
 
-	if DEBUG_OV { log.Printf("%s Create_ov OK fp='%s' wbt=%d", *who, File_path, wbt) }
+	if DEBUG_OV {
+		log.Printf("%s Create_ov OK fp='%s' wbt=%d", *who, File_path, wbt)
+	}
 	return nil
 
 } // end func Create_ov
@@ -1741,13 +1739,13 @@ func Grow_ov(who *string, ovfh *OVFH, pages int, blocksize string, mode int, del
 	} // end if mode != 999
 
 	/*
-	if mode == 999 {
-		// 1. overwrite footer area while still mapped
-		if _, err, errstr = Write_ov(who, ovfh, "", false, true, true, delete); err != nil {
-			log.Printf("%s ERROR Grow_ov -> Write_ov err='%v' errstr='%s' mode=%d", *who, err, errstr, mode)
-			return nil, err
-		}
-	}*/
+		if mode == 999 {
+			// 1. overwrite footer area while still mapped
+			if _, err, errstr = Write_ov(who, ovfh, "", false, true, true, delete); err != nil {
+				log.Printf("%s ERROR Grow_ov -> Write_ov err='%v' errstr='%s' mode=%d", *who, err, errstr, mode)
+				return nil, err
+			}
+		}*/
 
 	// 2. unmap and close overview mmap
 	force_close := true
@@ -1782,7 +1780,7 @@ func Grow_ov(who *string, ovfh *OVFH, pages int, blocksize string, mode int, del
 		}
 		log.Printf("3.1 reopen mmap file oldMmap_size=%d newMmap_size=%d", ovfh.Mmap_size, len(ovfh.Mmap_handle))
 		ovfh.Mmap_size = len(ovfh.Mmap_handle)
-		ovfh.Mmap_range = ovfh.Mmap_size-1
+		ovfh.Mmap_range = ovfh.Mmap_size - 1
 		// 3.2 unmap and close overview mmap
 		retbool, err := utils.MMAP_CLOSE(ovfh.File_path, ovfh.File_handle, ovfh.Mmap_handle, "r")
 		if !retbool || err != nil {
@@ -2029,8 +2027,7 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 	//to_end := false
 	if *b == 0 {
 		//to_end = true
-	} else
-	if *a > *b {
+	} else if *a > *b {
 		return nil, fmt.Errorf("Error Scan_Overview a=%d > b=%d", *a, *b)
 	}
 	if fields == nil {
@@ -2118,7 +2115,7 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 
 		if *fields == "NewOVI" {
 			offsets[msgnum] = offset
-			offset += int64(ll)+1
+			offset += int64(ll) + 1
 			msgnums = append(msgnums, msgnum)
 			continue
 		}
@@ -2150,8 +2147,7 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 				}
 			}
 
-		} else
-		if *fields == "all" {
+		} else if *fields == "all" {
 
 			if conn == nil {
 				lines = append(lines, &line)
@@ -2166,8 +2162,7 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 				}
 			}
 
-		} else
-		if *fields == "msgid" {
+		} else if *fields == "msgid" {
 			lines = append(lines, &datafields[4]) // catches message-id field
 			log.Printf("Scan_Overview returns a=%d b=%d file='%s' msgid='%s'", *a, *b, filepath.Base(*file), datafields[4])
 			break
@@ -2204,10 +2199,10 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 
 	if conn != nil {
 		//if *fields == "all" || *fields == "LISTGROUP" {
-			tx, err := io.WriteString(conn, DOTCRLF)
-			if err != nil {
-				return nil, err
-			}
+		tx, err := io.WriteString(conn, DOTCRLF)
+		if err != nil {
+			return nil, err
+		}
 		//}
 		if txb != nil {
 			*txb += tx
@@ -2219,5 +2214,153 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 	return lines, err
 } // end func Scan_Overview
 
+func ParseHeaderKeys(head *[]string, laxmid bool) (headermap map[string][]string, keysorder []string, msgid string, err error) {
+	/*  RFC 5322 section 2.2:
+	Header fields are lines beginning with a field name, followed by a
+	colon (":"), followed by a field body, and terminated by CRLF.
+	*
+	* A field name MUST be composed of printable US-ASCII characters (i.e.,
+	characters that have values between 33 and 126, inclusive), except
+	colon.
+	*
+	* A field body may be composed of printable US-ASCII characters
+	as well as the space (SP, ASCII value 32) and horizontal tab (HTAB,
+	ASCII value 9) characters (together known as the white space
+	characters, WSP).  A field body MUST NOT include CR and LF except
+	when used in "folding" and "unfolding", as described in section
+	2.2.3.  All field bodies MUST conform to the syntax described in
+	sections 3 and 4 of this specification.
+	*/
+	if head == nil {
+		return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: head=nil")
+	}
+	key := ""
+	//msgid = ""
+	headermap = make(map[string][]string)
+	keysorder = []string{}
+	for i, line := range *head {
+		if len(line) < 2 {
+			return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: Header attribute expected i=%d", i)
+		}
+		if isspace(line[0]) && key != "" {
+			headermap[key] = append(headermap[key], line)
+			continue
+		} else if isspace(line[0]) && key == "" {
+			return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: Unexpected continuation of a header somehow missed line='%s' i=%d head=%d key='%s'", line, i, len(*head), key)
+		}
+		k := strings.Index(line, ":")
+		if k < 1 {
+			return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: Colon not found in expected 'key: value' syntax | line='%s'", line)
+		}
 
+		key = string(line[0:k])
+		value := string(line[k+1:])
 
+		for j, c := range key {
+			if c < 33 || c > 126 {
+				return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: Key 'c < 32 || c > 126' key='%s' line='%s' i=%d j=%d", key, line, i, j)
+			}
+		}
+
+		for j, c := range value {
+			if c < 32 && c != 9 {
+				return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: invalid value char line='%s' i=%d j=%d c=%d", line, i, j, c)
+			}
+		}
+
+		headermap[key] = append(headermap[key], value)
+		keysorder = append(keysorder, key)
+	}
+	msgid_key := ""
+	for key, values := range headermap {
+		if strings.ToLower(key) == "message-id" {
+			msgid = strings.Join(values, "")
+			msgid_key = key
+			if msgid != "" {
+				msgid, err = GetMessageID(msgid, laxmid)
+				if err != nil || msgid == "" {
+					return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys getMessageID key='%s' val='%v'", key, values)
+				}
+				break
+			}
+		}
+	}
+	if msgid != "" && len(headermap[msgid_key]) > 1 {
+		headermap[msgid_key] = nil
+		headermap[msgid_key] = append(headermap[msgid_key], msgid)
+	}
+	//_ = ConstructHeader(headermap, &keysorder)
+	//log.Printf("ParseHeaderKeys: returns map=%d ord=%d \n v='%v'\n", len(headermap), len(keysorder), headermap)
+	return
+} // end func ParseHeaderKeys
+
+func ConstructHeader(headermap map[string][]string, keysorder *[]string) (headlines *[]string) {
+	var head []string
+	var lineBegin bool
+	if keysorder == nil {
+		return nil
+	}
+	lc := 0
+	for _, akey := range *keysorder {
+		lineBegin = true
+		line := akey + ": "
+		for _, value := range headermap[akey] {
+			if lineBegin {
+				head = append(head, line+value)
+				lineBegin = false
+				lc++
+			} else {
+				if len(value) > 0 && utils.IsSpace(value[0]) {
+					head = append(head, value)
+					lc++
+				}
+			}
+		} // end for
+	} // end for
+	headlines = &head
+	//log.Printf("ConstructHeader returns lc=%d headlines=%d", lc, len(head))
+	return
+} // end func ConstructHeader
+
+func GetMessageID(amsgid string, laxmid bool) (string, error) {
+	//lastInd := -1
+	msgid := strings.TrimSpace(amsgid)
+	containsSpace := strings.Contains(msgid, " ")
+	//containsAT := strings.Contains(msgid, "@")
+
+	if laxmid && containsSpace {
+		if strings.HasPrefix(msgid, "<") && strings.HasSuffix(msgid, ">") {
+			return msgid, nil
+		}
+	} else
+	if !laxmid && containsSpace {
+		return "", fmt.Errorf("Error GetMessageID msgid='%s' laxmid=%t containsSpace=%t", msgid, laxmid, containsSpace)
+	}
+
+	if laxmid && strings.HasSuffix(msgid, ">#1/1") {
+		lastInd := strings.LastIndex(msgid, "#")
+		if lastInd > 0 {
+			msgid = string(msgid[:lastInd])
+		}
+	} else
+	if laxmid && strings.HasPrefix(msgid, "<") && (strings.Contains(msgid, ">?(") || strings.Contains(msgid, "> (") || strings.Contains(msgid, ">(UMass-") || strings.Contains(msgid, ">-(UMass-")) && strings.HasSuffix(msgid, ")") {
+		split := strings.Split(msgid, ">")
+		msgid = split[0] + ">"
+	}
+
+	if laxmid {
+		if strings.HasPrefix(msgid, "<") && strings.HasSuffix(msgid, ">") {
+			return msgid, nil
+		}
+	} else
+	if !laxmid {
+		if strings.HasPrefix(msgid, "<") && strings.Contains("msgid", "@") && strings.HasSuffix(msgid, ">") {
+			return msgid, nil
+		}
+	}
+	return "", fmt.Errorf("ERROR: getMessageID failed amsgid='%s'", amsgid)
+} // func GetMessageID
+
+func isspace(b byte) bool {
+	return b < 33
+}
