@@ -354,14 +354,12 @@ func (oh *OV_Handler) process_close_request(hid int, who *string, close_request 
 	retval := false
 	//force_close := true
 
-
 	force_close := is_closed_server(oh.STOP)
 	//open_overviews := len(count_open_overviews)
 	if !force_close && (oh.CLOSE_ALWAYS || close_request.force_close || len(count_open_overviews) == oh.MAX_OPEN_MMAPS) {
 		// always close mmap if force_close is set or max_open_maps is reached
 		force_close = true
 	}
-
 
 	file := filepath.Base(close_request.ovfh.File_path)
 	if oh.Debug {
