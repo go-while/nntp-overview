@@ -19,14 +19,8 @@ import (
 )
 
 const (
-	DEBUG_OV bool   = false
-	null     string = "\x00"
-	tab      string = "\010"
-	CR       string = "\r"
-	LF       string = "\n"
-	CRLF     string = CR + LF
-	DOT      string = "."
-	DOTCRLF  string = DOT + CRLF
+	null string = "\x00"
+	tab  string = "\010"
 
 	XREF_PREFIX = "nntp"
 
@@ -63,6 +57,13 @@ const (
 )
 
 var (
+	AUTOINDEX           bool   = true
+	DEBUG_OV            bool   = false
+	CR                  string = "\r"
+	LF                  string = "\n"
+	CRLF                string = CR + LF
+	DOT                 string = "."
+	DOTCRLF             string = DOT + CRLF
 	PRELOAD_ZERO_1K     string
 	PRELOAD_ZERO_4K     string
 	PRELOAD_ZERO_128K   string
@@ -78,6 +79,7 @@ var (
 	workers_done_chan       chan int      // holds an empty struct for done overview worker
 	count_open_overviews    chan struct{} // holds an empty struct for every open overview file
 	MAX_Open_overviews_chan chan struct{} // locking queue prevents opening of more overview files
+	OV_AUTOINDEX_CHAN       = make(chan *NEWOVI, 1)
 )
 
 type Overview_Open_Request struct {
@@ -194,6 +196,10 @@ func (ov *OV) Load_Overview(maxworkers int, max_queue_size int, max_open_mmaps i
 	}
 	if max_open_mmaps < 2 {
 		max_open_mmaps = 2
+	}
+
+	if AUTOINDEX {
+		go OV_AutoIndex()
 	}
 
 	Overview.more_parallel = more_parallel
@@ -2017,8 +2023,8 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 	if file == nil || a == nil || b == nil {
 		return nil, fmt.Errorf("Error Scan_Overview file=nil||a=nil||b=nil")
 	}
-	index := fmt.Sprintf("%s.Index", *file)
 
+	index := fmt.Sprintf("%s.Index", *file)
 	offset := OVIndex.ReadOverviewIndex(&index, *group, *a, *b)
 
 	if *a < 1 {
@@ -2057,8 +2063,6 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 	fileScanner.Buffer(buf, maxScan)
 	fileScanner.Split(bufio.ScanLines)
 	var lc uint64 // linecounter
-	//offset := 0
-	//var offsets []int
 	offsets := make(map[uint64]int64)
 	msgnums := []uint64{}
 	log.Printf("Scan_Overview fp='%s' a=%d b=%d", filepath.Base(*file), *a, *b)
@@ -2066,14 +2070,14 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 	if conn != nil {
 		if initline != "" {
 			// conn is set: send init line
-			_, err := io.WriteString(conn, initline+CRLF)
-			if err != nil {
+			if err := sendlineOV(initline+CRLF, conn, txb); err != nil {
 				return nil, err
 			}
 		}
 	}
 
 	var msgnum uint64
+forfilescanner:
 	for fileScanner.Scan() {
 		if offset <= 0 && lc == 0 {
 			// pass, ignore first line aka linecount 0: header from overview file
@@ -2092,7 +2096,7 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 		}
 
 		if ll >= 0 && ll <= 3 {
-			if line == "" || line[0] == '\x00' || line == "EOV" {
+			if line == "" || line[0] == 0 || line[0] == '\x00' || line == "EOV" {
 				log.Printf("break Scan_Overview lc=%d")
 				break
 			}
@@ -2108,6 +2112,10 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 
 		msgnum = utils.Str2uint64(datafields[0])
 		if msgnum == 0 {
+			if len(datafields[4]) > 0 && (datafields[4][0] == 'X' || datafields[4][0] == 0) { // check if first char is X or NUL
+				// expiration removed article from overview
+				continue
+			}
 			err = fmt.Errorf("Error Scan_Overview lc=%d msgnum=0 file='%s'", lc, filepath.Base(*file))
 			log.Printf("%s", err)
 			return nil, err
@@ -2115,7 +2123,7 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 
 		if *fields == "NewOVI" {
 			offsets[msgnum] = offset
-			offset += int64(ll) + 1
+			offset += int64(ll) + 1 // + 1 == int64(len(LF))
 			msgnums = append(msgnums, msgnum)
 			continue
 		}
@@ -2127,53 +2135,43 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 		}
 
 		if !isvalidmsgid(datafields[4], true) {
+			if len(datafields[4]) > 0 && (datafields[4][0] == 'X' || datafields[4][0] == 0) { // check if first char is X or NUL
+				// expiration removed article from overview
+				continue
+			}
 			log.Printf("Error Scan_Overview file='%s' lc=%d field[4] err='!isvalidmsgid'", filepath.Base(*file), lc)
 			break
 		}
 
-		if *fields == "LISTGROUP" {
-			sendline := fmt.Sprintf("%d %s", msgnum, datafields[4])
-
-			if conn == nil {
-				lines = append(lines, &sendline)
-
-			} else {
-				tx, err := io.WriteString(conn, sendline+CRLF)
-				if err != nil {
-					return nil, err
-				}
-				if txb != nil {
-					*txb += tx
-				}
-			}
-
-		} else if *fields == "all" {
-
+		switch *fields {
+		case "LISTGROUP":
+			line := fmt.Sprintf("%d %s", msgnum, datafields[4])
 			if conn == nil {
 				lines = append(lines, &line)
-
 			} else {
-				tx, err := io.WriteString(conn, line+CRLF)
-				if err != nil {
+				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
 					return nil, err
 				}
-				if txb != nil {
-					*txb += tx
+			}
+		case "all":
+			if conn == nil {
+				lines = append(lines, &line)
+			} else {
+				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
+					return nil, err
 				}
 			}
-
-		} else if *fields == "msgid" {
+		case "msgid":
 			lines = append(lines, &datafields[4]) // catches message-id field
 			log.Printf("Scan_Overview returns a=%d b=%d file='%s' msgid='%s'", *a, *b, filepath.Base(*file), datafields[4])
-			break
-
-		} else {
+			break forfilescanner
+		default:
 			log.Printf("Error scan_overview unknown *fields=%s", *fields)
-			break
+			break forfilescanner
 		}
 
 		if msgnum >= *b {
-			break
+			break forfilescanner
 		}
 
 	} // end for filescanner
@@ -2197,22 +2195,26 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 		return nil, nil
 	} // end NewINDEX
 
-	if conn != nil {
-		//if *fields == "all" || *fields == "LISTGROUP" {
-		tx, err := io.WriteString(conn, DOTCRLF)
-		if err != nil {
-			return nil, err
-		}
-		//}
-		if txb != nil {
-			*txb += tx
-		}
-
-		lines = nil
-	}
+	sendlineOV(DOTCRLF, conn, txb)
 
 	return lines, err
 } // end func Scan_Overview
+
+func sendlineOV(line string, conn net.Conn, txb *int) error {
+	if line == "" {
+		return fmt.Errorf("Error OV sendline line=nil")
+	}
+	if conn != nil {
+		tx, err := io.WriteString(conn, line)
+		if err != nil {
+			return err
+		}
+		if txb != nil {
+			*txb += tx
+		}
+	}
+	return nil
+} // end func sendline
 
 func ParseHeaderKeys(head *[]string, laxmid bool) (headermap map[string][]string, keysorder []string, msgid string, err error) {
 	/*  RFC 5322 section 2.2:
@@ -2240,7 +2242,7 @@ func ParseHeaderKeys(head *[]string, laxmid bool) (headermap map[string][]string
 	keysorder = []string{}
 	for i, line := range *head {
 		if len(line) < 2 {
-			return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: Header attribute expected i=%d", i)
+			return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: Header attribute expected i=%d head=%d line='%s'", i, len(*head), line)
 		}
 		if isspace(line[0]) && key != "" {
 			headermap[key] = append(headermap[key], line)
@@ -2261,13 +2263,13 @@ func ParseHeaderKeys(head *[]string, laxmid bool) (headermap map[string][]string
 				return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: Key 'c < 32 || c > 126' key='%s' line='%s' i=%d j=%d", key, line, i, j)
 			}
 		}
-
-		for j, c := range value {
-			if c < 32 && c != 9 {
-				return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: invalid value char line='%s' i=%d j=%d c=%d", line, i, j, c)
+		/*
+			for j, c := range value {
+				if c < 32 && c != 9 {
+					return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: invalid value char line='%s' i=%d j=%d c=%d", line, i, j, c)
+				}
 			}
-		}
-
+		*/
 		headermap[key] = append(headermap[key], value)
 		keysorder = append(keysorder, key)
 	}
@@ -2332,8 +2334,7 @@ func GetMessageID(amsgid string, laxmid bool) (string, error) {
 		if strings.HasPrefix(msgid, "<") && strings.HasSuffix(msgid, ">") {
 			return msgid, nil
 		}
-	} else
-	if !laxmid && containsSpace {
+	} else if !laxmid && containsSpace {
 		return "", fmt.Errorf("Error GetMessageID msgid='%s' laxmid=%t containsSpace=%t", msgid, laxmid, containsSpace)
 	}
 
@@ -2342,8 +2343,7 @@ func GetMessageID(amsgid string, laxmid bool) (string, error) {
 		if lastInd > 0 {
 			msgid = string(msgid[:lastInd])
 		}
-	} else
-	if laxmid && strings.HasPrefix(msgid, "<") && (strings.Contains(msgid, ">?(") || strings.Contains(msgid, "> (") || strings.Contains(msgid, ">(UMass-") || strings.Contains(msgid, ">-(UMass-")) && strings.HasSuffix(msgid, ")") {
+	} else if laxmid && strings.HasPrefix(msgid, "<") && (strings.Contains(msgid, ">?(") || strings.Contains(msgid, "> (") || strings.Contains(msgid, ">(UMass-") || strings.Contains(msgid, ">-(UMass-")) && strings.HasSuffix(msgid, ")") {
 		split := strings.Split(msgid, ">")
 		msgid = split[0] + ">"
 	}
@@ -2352,14 +2352,13 @@ func GetMessageID(amsgid string, laxmid bool) (string, error) {
 		if strings.HasPrefix(msgid, "<") && strings.HasSuffix(msgid, ">") {
 			return msgid, nil
 		}
-	} else
-	if !laxmid {
+	} else if !laxmid {
 		if strings.HasPrefix(msgid, "<") && strings.Contains("msgid", "@") && strings.HasSuffix(msgid, ">") {
 			return msgid, nil
 		}
 	}
 	return "", fmt.Errorf("ERROR: getMessageID failed amsgid='%s'", amsgid)
-} // func GetMessageID
+} // end func GetMessageID
 
 func isspace(b byte) bool {
 	return b < 33
