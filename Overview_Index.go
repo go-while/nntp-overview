@@ -2,11 +2,11 @@ package overview
 
 import (
 	"bufio"
-	"os"
-	"path/filepath"
 	"fmt"
 	"github.com/go-while/go-utils"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -60,15 +60,15 @@ func WriteOverviewIndex(file *string, msgnums []uint64, offsets map[uint64]int64
 			z = offset
 		}
 	}
-	WriteOverviewIndex_INDEX(&OV_Index_File, &IndexLine{ a: &a, b: &b, y: &y, z: &z})
+	WriteOverviewIndex_INDEX(&OV_Index_File, &IndexLine{a: &a, b: &b, y: &y, z: &z})
 	//WriteOverviewIndex_TABLE(&OV_IndexTable, a, b, len(*offsets))
 } // end func NewOverviewIndex
 
 type IndexLine struct {
 	a *uint64 // msgnum
 	b *uint64 // msgnum
-	y *int64 // offset
-	z *int64 // offset
+	y *int64  // offset
+	z *int64  // offset
 }
 
 func WriteOverviewIndex_INDEX(file *string, data *IndexLine) {
@@ -80,7 +80,7 @@ func WriteOverviewIndex_INDEX(file *string, data *IndexLine) {
 	}
 	line := fmt.Sprintf("|%d|%d|%d|%d|", *data.a, *data.b, *data.y, *data.z)
 	//line := fmt.Sprintf("|0x%03x|0x%03x|0x%06x|0x%06x|", *data.a, *data.b, *data.y, *data.z)
-	_, err = fh.WriteString(line+LF)
+	_, err = fh.WriteString(line + LF)
 	if err != nil {
 		log.Printf("Error WriteOverviewIndex_INDEX fp='%s' err2='%v'", filepath.Base(*file), err)
 	}
@@ -142,9 +142,9 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file *string, group string, a uint64
 			break
 		}
 		/*
-		if b > x_b {
-			continue
-		}
+			if b > x_b {
+				continue
+			}
 		*/
 		x_y := utils.Str2int64(x[3])
 		if x_y == 0 {
@@ -156,7 +156,9 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file *string, group string, a uint64
 			log.Printf("Error ReadOverviewIndex groups='%s' fp='%s' DECODE ERROR4 lc=%d", group, filepath.Base(*file), lc)
 			break
 		}
-		if DEBUG_OV { log.Printf("ROVI group='%s' a=%d x_a=%d x_b=%d x_y=%d x_z=%d", group, a, x_a, x_b, x_y, x_y) }
+		if DEBUG_OV {
+			log.Printf("ROVI group='%s' a=%d x_a=%d x_b=%d x_y=%d x_z=%d", group, a, x_a, x_b, x_y, x_y)
+		}
 		if a >= x_a && a <= x_b {
 			//if prev_xa > 0 && prev_xy > 0 {
 			//	OVIndex.SetOVIndexCacheOffset(group, prev_xa, prev_xy)
@@ -178,10 +180,10 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file *string, group string, a uint64
 } // end func ReadOverviewIndex
 
 type OverviewIndex struct {
-	mux sync.RWMutex
-	IndexMap map[string]map[uint64]int64  // data[group][msgnum]offset
-	IndexCache []string
-	IndexCacheSize int  // number of groups we cache an index for
+	mux            sync.RWMutex
+	IndexMap       map[string]map[uint64]int64 // data[group][msgnum]offset
+	IndexCache     []string
+	IndexCacheSize int // number of groups we cache an index for
 }
 
 func (ovi *OverviewIndex) SetOVIndexCacheOffset(group string, fnum uint64, offset int64) {
@@ -254,14 +256,14 @@ func (ovi *OverviewIndex) MemDropIndexCache(group string, fnum uint64) {
 	} else {
 		// drop index cache for group
 		switch fnum {
-			case 0:
-				// fnum is not set
-				// memoryleak! map without limit caches infinite amount of index offsets for group
-				ovi.IndexMap[group] = make(map[uint64]int64)
-			default:
-				if fnum > 0 {
-					delete(ovi.IndexMap[group] , fnum)
-				}
+		case 0:
+			// fnum is not set
+			// memoryleak! map without limit caches infinite amount of index offsets for group
+			ovi.IndexMap[group] = make(map[uint64]int64)
+		default:
+			if fnum > 0 {
+				delete(ovi.IndexMap[group], fnum)
+			}
 		}
 	}
 }
