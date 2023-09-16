@@ -9,11 +9,16 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 func CMD_NewOverviewIndex(file *string, group *string) bool {
-	if file == nil {
-		log.Printf("Error CMD_NewOverviewIndex file=nil")
+	var mux sync.Mutex
+	mux.Lock()
+	defer mux.Unlock()
+	// *file = "/ov/abcd.overview"
+	if file == nil || group == nil || *file == "" || *group == "" {
+		log.Printf("Error CMD_NewOverviewIndex file=nil||group=nil")
 		return false
 	}
 	if !utils.FileExists(*file) {
@@ -28,12 +33,13 @@ func CMD_NewOverviewIndex(file *string, group *string) bool {
 	var a uint64 = 1
 	var b uint64
 	fields := "NewOVI"
-	log.Printf("CMD_NewOverviewIndex: fp='%s'", *file)
 	_, err := Scan_Overview(file, group, &a, &b, &fields, nil, "", nil)
 	if err != nil {
+		time.Sleep(time.Second)
 		log.Printf("Error CMD_NewOverviewIndex Scan_Overview err='%v'", err)
 		return false
 	}
+	log.Printf("OK CMD_NewOverviewIndex: fp='%s'", *file)
 	return true
 } // end func CMD_NewOverviewIndex
 
@@ -42,11 +48,10 @@ func WriteOverviewIndex(file *string, msgnums []uint64, offsets map[uint64]int64
 		log.Printf("Error WriteOverviewIndex fp='%s' offsets=nil", filepath.Base(*file))
 		return
 	}
-	//OV_IndexTable := fmt.Sprintf("%s.Dir")
 	OV_Index_File := fmt.Sprintf("%s.Index", *file)
-	//a, b, y, z := 0, 0, 0, 0
-	var a, b uint64
-	var y, z int64
+	//OV_IndexTable := OV_Index_File+".Dir"
+	var a, b uint64 // msgnum
+	var y, z int64  // offset
 	for _, msgnum := range msgnums {
 		offset := offsets[msgnum]
 		if a == 0 {
@@ -65,10 +70,10 @@ func WriteOverviewIndex(file *string, msgnums []uint64, offsets map[uint64]int64
 } // end func NewOverviewIndex
 
 type IndexLine struct {
-	a *uint64 // msgnum
-	b *uint64 // msgnum
-	y *int64  // offset
-	z *int64  // offset
+	a *uint64 // msgnum a
+	b *uint64 // msgnum b
+	y *int64  // y is offset for a
+	z *int64  // z is offset for b
 }
 
 func WriteOverviewIndex_INDEX(file *string, data *IndexLine) {
@@ -88,16 +93,23 @@ func WriteOverviewIndex_INDEX(file *string, data *IndexLine) {
 } // end func WriteOverviewIndex_INDEX
 
 func (ovi *OverviewIndex) ReadOverviewIndex(file *string, group string, a uint64, b uint64) int64 {
-	cached_offset := ovi.GetOVIndexCacheOffset(group, a)
+	// file == "*.Index"
+	cached_offset := ovi.GetOVIndexCacheOffset(group, a) // from memory
 	if cached_offset > 0 {
 		return cached_offset
 	}
 
-	offset := cached_offset
+	var offset int64
 	fh, err := os.OpenFile(*file, os.O_RDONLY, 0444)
 	defer fh.Close()
 	if err != nil {
 		log.Printf("Error ReadOverviewIndex groups='%s' fp='%s' err0='%v'", group, filepath.Base(*file), err)
+		if AUTOINDEX {
+			fOV := strings.Replace(*file, ".Index", "", 1)
+			log.Printf("sending to OV_AUTOINDEX_CHAN")
+			OV_AUTOINDEX_CHAN <- &NEWOVI{fOV: &fOV, group: &group}
+			log.Printf("sent to OV_AUTOINDEX_CHAN")
+		}
 		return offset
 	}
 	fileScanner := bufio.NewScanner(fh)
@@ -117,10 +129,12 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file *string, group string, a uint64
 		lc++
 		line := fileScanner.Text()
 		if len(line) < 16 {
-			log.Printf("Error ReadOverviewIndex groups='%s' fp='%s' line<32 lc=%d ll=%d", group, filepath.Base(*file), lc, len(line))
+			log.Printf("Error ReadOverviewIndex groups='%s' fp='%s' line<16 lc=%d ll=%d", group, filepath.Base(*file), lc, len(line))
 			break
 		}
-		//if line[0] == '|' && line[len(line)-1] == '|' {
+		if line[0] != '|' && line[len(line)-1] != '|' {
+			break
+		}
 		x := strings.Split(line, "|")
 		if len(x) != 6 {
 			log.Printf("Error ReadOverviewIndex groups='%s' fp='%s' len(x) != 6 lc=%d", group, filepath.Base(*file), lc)
@@ -191,7 +205,7 @@ func (ovi *OverviewIndex) SetOVIndexCacheOffset(group string, fnum uint64, offse
 	ovi.mux.Lock()
 	defer ovi.mux.Unlock()
 	if ovi.IndexMap == nil {
-		ovi.IndexCacheSize = 4096
+		ovi.IndexCacheSize = 4096 // keeps offsets for this amount of groups in cache
 		ovi.IndexMap = make(map[string]map[uint64]int64, ovi.IndexCacheSize)
 	}
 	if ovi.IndexMap[group] == nil {
@@ -213,9 +227,9 @@ func (ovi *OverviewIndex) SetOVIndexCacheOffset(group string, fnum uint64, offse
 	ovi.IndexCache = append(ovi.IndexCache, group)
 } // end func SetOVIndexCacheOffset
 
-func (ovi *OverviewIndex) GetOVIndexCacheOffset(group string, a uint64) int64 {
+func (ovi *OverviewIndex) GetOVIndexCacheOffset(group string, a uint64) (offset int64) {
 	if a < 100 {
-		return 0
+		return
 	}
 	// offets are created for every 100 messages in overview
 	// 1|100|offset1|offset2
@@ -225,24 +239,24 @@ func (ovi *OverviewIndex) GetOVIndexCacheOffset(group string, a uint64) int64 {
 	// example: a=151 floors to 100
 	//          a=1234 floors to 1200
 	floored := ((a / 100) * 100)
-	log.Printf("Try GetOVIndexCacheOffset group='%s' a=%d floored=%d", group, a, floored)
+	//log.Printf("Try GetOVIndexCacheOffset group='%s' a=%d floored=%d", group, a, floored)
 
-	var offset int64
 	ovi.mux.RLock()
 	defer ovi.mux.RUnlock()
+
 	if ovi.IndexMap == nil {
-		return 0
+		return
 	}
 	if ovi.IndexMap[group] == nil {
 		log.Printf("GetOVIndexCacheOffset group='%s' not cached", group)
-		return 0
+		return
 	}
+
 	if ovi.IndexMap[group][floored] > 0 {
 		offset = ovi.IndexMap[group][floored]
 		log.Printf("OK GetOVIndexCacheOffset group='%s' a=%d f=%d @offset=%d", group, a, floored, offset)
-		return offset
 	}
-	return 0
+	return
 } // func GetOVIndexCacheOffset
 
 func (ovi *OverviewIndex) MemDropIndexCache(group string, fnum uint64) {
@@ -266,4 +280,22 @@ func (ovi *OverviewIndex) MemDropIndexCache(group string, fnum uint64) {
 			}
 		}
 	}
+} // end func MemDropIndexCache
+
+type NEWOVI struct {
+	fOV   *string
+	group *string
 }
+
+func OV_AutoIndex() {
+	for {
+		select {
+		case dat := <-OV_AUTOINDEX_CHAN:
+			if dat == nil || dat.fOV == nil || dat.group == nil {
+				continue
+			}
+			log.Printf("OV_AutoIndexer: dat.fOV='%s' group='%s'", *dat.fOV, *dat.group)
+			CMD_NewOverviewIndex(dat.fOV, dat.group)
+		} // end select
+	} // end for
+} // end func OV_Indexer
