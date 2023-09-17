@@ -436,7 +436,6 @@ readlines:
 					continue
 				}
 			*/
-			//date := datafields[3]
 			newline := fmt.Sprintf("%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", new_msgnum, subj, from, date, msgid, datafields[5], datafields[6], datafields[7], xref)
 			writeLines = append(writeLines, &newline)
 			if debug {
@@ -482,45 +481,6 @@ readlines:
 	}
 	return false
 } // end func ReOrderOverview
-
-var (
-	BAD_FROM = []string{
-		"discounts@iphone",
-	}
-	BAD_SUBJ = []string{
-		"coronavirus",
-		"mushroom",
-		"shrooms",
-	}
-)
-
-func spamfilter(input *string, spamtype string, msgid *string) bool {
-	use_spamfilter := false
-	if !use_spamfilter {
-		return false
-	}
-	if input == nil {
-		log.Printf("Error OV spamfilter input=nil")
-		return true
-	}
-	switch spamtype {
-	case "subj":
-		for _, bad := range BAD_SUBJ {
-			if strings.Contains(strings.ToLower(*input), bad) {
-				log.Printf("spamfilter DROP msgid='%s' subj='%s' bad='%s'", *msgid, *input, bad)
-				return true
-			}
-		}
-	case "from":
-		for _, bad := range BAD_FROM {
-			if strings.Contains(strings.ToLower(*input), bad) {
-				log.Printf("spamfilter DROP msgid='%s' from='%s' bad='%s'", *msgid, *input, bad)
-				return true
-			}
-		}
-	}
-	return false
-} // end func spamfilter
 
 type AsortFuncInt64 []int64
 
