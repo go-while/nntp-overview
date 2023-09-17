@@ -80,6 +80,20 @@ var (
 	count_open_overviews    chan struct{} // holds an empty struct for every open overview file
 	MAX_Open_overviews_chan chan struct{} // locking queue prevents opening of more overview files
 	OV_AUTOINDEX_CHAN       = make(chan *NEWOVI, 1)
+	// The date format layouts to try
+	NNTPDateLayouts = []string{
+		"Mon, _2 Jan 2006 15:04:05 -0700",
+		"Mon, _2 Jan 2006 15:04:05 -0700 (MST)",
+		"Mon, _2 Jan 2006 15:04:05 MST",
+		"Mon, _2 Jan 2006 15:04:05",
+		"Mon, _2 Jan 06 15:04:05 -0700 (MST)",
+		"Mon, _2 Jan 06 15:04:05 -0700",
+		"Mon, _2 Jan 06 15:04:05",
+		"_2 Jan 2006 15:04:05 -0700 (MST)",
+		"_2 Jan 2006 15:04:05 -0700",
+		"_2 Jan 2006 15:04:05 MST",
+		"_2 Jan 2006 15:04:05",
+	}
 )
 
 type Overview_Open_Request struct {
@@ -1248,7 +1262,7 @@ func handle_open_ov(who *string, hash string, file_path string) (*OVFH, error) {
 
 	}
 	log.Printf("%s handle_open_ov !OK fp='%s'", *who, file_path)
-	return nil, fmt.Errorf("%s ERROR handle_open_ov cs=%d fp='%s'", *who, cs, file_path)
+	return nil, fmt.Errorf("%s ERROR handle_open_ov cs=%d fp='%s' final", *who, cs, file_path)
 } // end func handle_open_ov
 
 func Close_ov(who *string, ovfh *OVFH, update_footer bool, force_close bool) error {
@@ -1660,7 +1674,7 @@ func Create_ov(who *string, File_path string, hash string, pages int) error {
 	bodyend := OV_RESERVE_BEG + bytesize
 	foot_str := fmt.Sprintf("%s%d,last=0,Findex=%d,bodyend=%d,fend=%d,zeropad=%s,%s", FOOTER_BEG, now, OV_RESERVE_BEG, bodyend, bodyend+OV_RESERVE_END, ZERO_PATTERN, FOOTER_END)
 	ov_header := zerofill(head_str, OV_RESERVE_BEG)
-	ov_body := zerofill_block(pages, "1K") // initial max of overview data, will grow when needed
+	ov_body := zerofill_block(pages, "4K") // initial max of overview data, will grow when needed
 	ov_footer := zerofill(foot_str, OV_RESERVE_END)
 
 	wb, wbt := 0, 0 // debugs written bytes
@@ -1907,6 +1921,7 @@ func check_ovfh_footer(who *string, footer string) bool {
 } // end func check_ovfh_footer
 
 func init_file(who *string, File_path string, data string, grow bool) (int, error) {
+	DEBUG_OV1 := true
 	if DEBUG_OV {
 		log.Printf("%s init_file fp='%s' len_data=%d grow=%t", *who, File_path, len(data), grow)
 	}
@@ -1918,7 +1933,7 @@ func init_file(who *string, File_path string, data string, grow bool) (int, erro
 		w := bufio.NewWriter(fh)
 		if wb, err = w.WriteString(data); err == nil {
 			if err = w.Flush(); err == nil {
-				if DEBUG_OV {
+				if DEBUG_OV1 {
 					log.Printf("%s init_file wrote fp='%s' len_data=%d wb=%d grow=%t", *who, File_path, len(data), wb, grow)
 				}
 				return wb, nil
@@ -2023,9 +2038,12 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 	if file == nil || a == nil || b == nil {
 		return nil, fmt.Errorf("Error Scan_Overview file=nil||a=nil||b=nil")
 	}
+	var offset int64
 
-	index := fmt.Sprintf("%s.Index", *file)
-	offset := OVIndex.ReadOverviewIndex(&index, *group, *a, *b)
+	if group != nil {
+		index := fmt.Sprintf("%s.Index", *file)
+		offset = OVIndex.ReadOverviewIndex(&index, *group, *a, *b)
+	}
 
 	if *a < 1 {
 		return nil, fmt.Errorf("Error Scan_Overview a < 1")
@@ -2059,13 +2077,16 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 
 	fileScanner := bufio.NewScanner(readFile)
 	maxScan := 4096 // default NewScanner uses 64K buffer
+	if *fields == "ReOrderOV" {
+		maxScan = 1024 * 1024
+	}
 	buf := make([]byte, maxScan)
 	fileScanner.Buffer(buf, maxScan)
 	fileScanner.Split(bufio.ScanLines)
 	var lc uint64 // linecounter
 	offsets := make(map[uint64]int64)
 	msgnums := []uint64{}
-	log.Printf("Scan_Overview fp='%s' a=%d b=%d", filepath.Base(*file), *a, *b)
+	log.Printf("Scan_Overview fp='%s' a=%d b=%d maxScan=%d", filepath.Base(*file), *a, *b, maxScan)
 
 	if conn != nil {
 		if initline != "" {
@@ -2079,15 +2100,20 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 	var msgnum uint64
 forfilescanner:
 	for fileScanner.Scan() {
+		line := fileScanner.Text()
+		if *fields == "ReOrderOV" {
+			lines = append(lines, &line)
+			lc++
+			continue forfilescanner
+		}
 		if offset <= 0 && lc == 0 {
 			// pass, ignore first line aka linecount 0: header from overview file
 			lc++
 			//if offset <OV_RESERVE_BEG
 			offset += OV_RESERVE_BEG
-			continue
+			continue forfilescanner
 		}
 		lc++
-		line := fileScanner.Text()
 		ll := len(line)
 		if ll == 0 {
 			err = fmt.Errorf("break Scan_Overview lc=%d got empty line?!")
@@ -2098,7 +2124,7 @@ forfilescanner:
 		if ll >= 0 && ll <= 3 {
 			if line == "" || line[0] == 0 || line[0] == '\x00' || line == "EOV" {
 				log.Printf("break Scan_Overview lc=%d")
-				break
+				break forfilescanner
 			}
 		}
 
@@ -2107,14 +2133,14 @@ forfilescanner:
 			err = fmt.Errorf("Error Scan_Overview lc=%d len(fields)=%d != OVERVIEW_FIELDS=%d file='%s' line='%s'", lc, len(datafields), OVERVIEW_FIELDS, filepath.Base(*file), line)
 			log.Printf("%s", err)
 			//return nil, err
-			break
+			break forfilescanner
 		}
 
 		msgnum = utils.Str2uint64(datafields[0])
 		if msgnum == 0 {
 			if len(datafields[4]) > 0 && (datafields[4][0] == 'X' || datafields[4][0] == 0) { // check if first char is X or NUL
 				// expiration removed article from overview
-				continue
+				continue forfilescanner
 			}
 			err = fmt.Errorf("Error Scan_Overview lc=%d msgnum=0 file='%s'", lc, filepath.Base(*file))
 			log.Printf("%s", err)
@@ -2125,19 +2151,19 @@ forfilescanner:
 			offsets[msgnum] = offset
 			offset += int64(ll) + 1 // + 1 == int64(len(LF))
 			msgnums = append(msgnums, msgnum)
-			continue
+			continue forfilescanner
 		}
 
 		if msgnum < *a {
 			// msgnum is not in range
 			//log.Printf("Scan.Overview msgnum=%d < a=%d lc=%d", msgnum, *a, lc)
-			continue
+			continue forfilescanner
 		}
 
 		if !isvalidmsgid(datafields[4], true) {
 			if len(datafields[4]) > 0 && (datafields[4][0] == 'X' || datafields[4][0] == 0) { // check if first char is X or NUL
 				// expiration removed article from overview
-				continue
+				continue forfilescanner
 			}
 			log.Printf("Error Scan_Overview file='%s' lc=%d field[4] err='!isvalidmsgid'", filepath.Base(*file), lc)
 			break
@@ -2359,6 +2385,55 @@ func GetMessageID(amsgid string, laxmid bool) (string, error) {
 	}
 	return "", fmt.Errorf("ERROR: getMessageID failed amsgid='%s'", amsgid)
 } // end func GetMessageID
+
+func ParseDate(dv *string) (unixepoch int64, err error) {
+	debug := false
+	if dv == nil {
+		return 0, fmt.Errorf("Error OV ParseDate dv=nil")
+	}
+	var parsedTime time.Time
+	*dv = strings.TrimSpace(*dv)
+	// Try parsing with different layouts
+	for _, layout := range NNTPDateLayouts {
+		parsedText := extractMatchingText(*dv, layout)
+		parsedTime, err = time.Parse(layout, parsedText)
+		if err == nil {
+			break
+		}
+		//log.Printf("Error OV ParseDate: dv='%s' err='%v'", *dv, err)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("Error OV ParseDate: dv='%s'", *dv)
+	} else {
+		// Convert the parsed time to Unix epoch timestamp
+		epochTimestamp := parsedTime.Unix()
+		if epochTimestamp > 0 {
+			unixepoch = epochTimestamp
+			//log.Printf("ParseDate dv='%s' RFC3339='%s'", *dv, parsedTime.Format(time.RFC3339))
+			if debug {
+				log.Printf("ParseDate dv='%s' U: %d", *dv, unixepoch)
+			}
+		} else {
+			log.Printf("Error OV ParseDate dv='%s' epochTimestamp=%d < 0", *dv, parsedTime.Format(time.RFC3339), epochTimestamp)
+		}
+	}
+	return
+}
+
+// Function to extract only the portion of the input string that matches the layout
+func extractMatchingText(input string, layout string) string {
+	for i := 0; i < len(input); i++ {
+		// Attempt to parse the string with the layout
+		_, err := time.Parse(layout, input[:i])
+		if err != nil {
+			// If an error occurs, the previous substring is the matching text
+			continue
+		}
+		return input[:i]
+	}
+	// If the loop completes without an error, the entire input is the matching text
+	return input
+}
 
 func isspace(b byte) bool {
 	return b < 33
