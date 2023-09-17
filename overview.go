@@ -2395,12 +2395,24 @@ func ParseDate(dv *string) (unixepoch int64, err error) {
 	*dv = strings.TrimSpace(*dv)
 	// Try parsing with different layouts
 	for _, layout := range NNTPDateLayouts {
-		parsedText := extractMatchingText(*dv, layout)
-		parsedTime, err = time.Parse(layout, parsedText)
+		//parsedText := extractMatchingText(*dv, layout)
+		parsedTime, err = time.Parse(layout, *dv)
 		if err == nil {
 			break
 		}
 		//log.Printf("Error OV ParseDate: dv='%s' err='%v'", *dv, err)
+	}
+	if err != nil {
+		log.Printf("WARN1 OV ParseDate: dv='%s' try extractMatchingText", *dv)
+		for _, layout := range NNTPDateLayouts {
+			parsedText := extractMatchingText(*dv, layout)
+			parsedTime, err = time.Parse(layout, parsedText)
+			if err == nil {
+				log.Printf("INFO1 OV ParseDate: dv='%s' parsedText='%s' parsedTime='%s'", *dv, parsedText, parsedTime)
+				break
+			}
+			//log.Printf("Error OV ParseDate: dv='%s' err='%v'", *dv, err)
+		}
 	}
 	if err != nil {
 		return 0, fmt.Errorf("Error OV ParseDate: dv='%s'", *dv)
@@ -2422,6 +2434,10 @@ func ParseDate(dv *string) (unixepoch int64, err error) {
 
 // Function to extract only the portion of the input string that matches the layout
 func extractMatchingText(input string, layout string) string {
+	_, err := time.Parse(layout, input)
+	if err == nil {
+		return input
+	}
 	for i := 0; i < len(input); i++ {
 		// Attempt to parse the string with the layout
 		_, err := time.Parse(layout, input[:i])
