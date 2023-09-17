@@ -398,32 +398,36 @@ readlines:
 		}
 		for _, line := range mapdata[timestamp] {
 			datafields := strings.Split(line, "\t")
-			msgid := datafields[4]
 			old_msgnum := utils.Str2uint64(datafields[0])
 			if old_msgnum <= 0 {
 				continue
 			}
+			subj := datafields[1]
+			from := datafields[2]
+			date := datafields[3]
+			msgid := datafields[4]
+			xref := ""
+			//xref := datafields[7]
+			//parsedTime := time.Unix(timestamp, 0)
+			//rfc5322date := parsedTime.Format(time.RFC1123Z)
+			//date := rfc5322date
 
-			parsedTime := time.Unix(timestamp, 0)
-			rfc5322date := parsedTime.Format(time.RFC1123Z)
 			if old_msgnum != new_msgnum {
 				if debug {
-					log.Printf("ReOrderOV old_msgnum=%d -> new_msgnum=%d rfc5322date='%s' msgid='%s'", old_msgnum, new_msgnum, rfc5322date, msgid)
+					log.Printf("ReOrderOV old_msgnum=%d -> new_msgnum=%d date='%s' msgid='%s'", old_msgnum, new_msgnum, date, msgid)
 				}
 			}
-			//xref := datafields[7]
-			xref := ""
-			subj := datafields[1]
-			if spamfilter(&subj, "subj", &msgid) {
-				log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'subj'", msgid)
-				continue
-			}
-			from := datafields[2]
-			if spamfilter(&from, "from", &msgid) {
-				log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'from'", msgid)
-				continue
-			}
-			date := rfc5322date
+
+			/*
+				if spamfilter(&subj, "subj", &msgid) {
+					log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'subj'", msgid)
+					continue
+				}
+				from := datafields[2]
+				if spamfilter(&from, "from", &msgid) {
+					log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'from'", msgid)
+					continue
+				}*/
 			/*
 				bytes := utils.Str2uint64(datafields[6])
 				var limit_bytes uint64 = 256*1024
