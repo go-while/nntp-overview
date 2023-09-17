@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -299,3 +300,228 @@ func OV_AutoIndex() {
 		} // end select
 	} // end for
 } // end func OV_Indexer
+
+func ReOrderOverview(file *string, group string) bool {
+	debug := false
+	newfile := *file + ".new"
+	if utils.FileExists(newfile) {
+		log.Printf("Error ReOrderOverview FileExists newfile='%s'", newfile)
+		return false
+	}
+	if !utils.FileExists(*file) {
+		log.Printf("Error ReOrderOverview !FileExists file='%s'", *file)
+		return false
+	}
+	var a, b uint64
+	a = 1
+	fields := "ReOrderOV"
+	lines, err := Scan_Overview(file, nil, &a, &b, &fields, nil, "", nil)
+	ll := len(lines)
+	if err != nil || ll == 0 {
+		log.Printf("Error OV ReOrderOverview file='%s' err='%v' ll=%d", filepath.Base(*file), err, ll)
+	}
+	mapdata := make(map[int64][]string)
+	unixstamps := []int64{}
+	uniq_msgids := make(map[string]bool)
+	uniq_stamps := make(map[int64]bool)
+	var header string
+	var footer []string
+	var readfooter bool
+readlines:
+	for i, line := range lines {
+		if line == nil {
+			log.Printf("Error OV ReOrderOverview i=%d line=nil ll=%d", i, ll)
+			break
+		}
+		if i == 0 {
+			header = *line
+			continue
+		}
+		if debug {
+			log.Printf("OV ReOrderOverview file='%s' *line='%v' ll=%d", filepath.Base(*file), *line, len(*line))
+		}
+		if !readfooter && len(*line) > 0 && string(*line)[0] == 0 {
+			readfooter = true
+			continue
+		}
+		if readfooter {
+			footer = append(footer, *line)
+			continue
+		}
+
+		datafields := strings.Split(*line, "\t")
+		if len(datafields) != OVERVIEW_FIELDS {
+			log.Printf("Error OV ReOrderOverview file='%s' len(datafields)=%d != OVERVIEW_FIELDS=%d i=%d", filepath.Base(*file), len(datafields), OVERVIEW_FIELDS, i)
+			break
+		}
+		if !isvalidmsgid(datafields[4], true) {
+			if len(datafields[4]) > 0 && (datafields[4][0] == 'X' || datafields[4][0] == 0) { // check if first char is X or NUL
+				// expiration removed article from overview
+				continue
+			}
+			log.Printf("Error OV ReOrderOverview file='%s' lc=%d field[4] err='!isvalidmsgid'", filepath.Base(*file), i)
+			break
+		}
+		//msgnum := utils.Str2uint64(datafields[0])
+		msgid := datafields[4]
+		switch uniq_msgids[msgid] {
+		case true:
+			log.Printf("Ignore Duplicate msgid='%s' file='%s' i=%d", msgid, filepath.Base(*file), i)
+			time.Sleep(time.Second)
+			continue readlines
+		case false:
+			uniq_msgids[msgid] = true
+		}
+		unixepoch, err := ParseDate(&datafields[3])
+		if err != nil {
+			log.Printf("Error OV ReOrderOverview ParseDate file='%s' i=%d err='%v'", filepath.Base(*file), i, err)
+			return false
+		}
+		mapdata[unixepoch] = append(mapdata[unixepoch], *line)
+		switch uniq_stamps[unixepoch] {
+		case true:
+			continue
+		case false:
+			uniq_stamps[unixepoch] = true
+		}
+		unixstamps = append(unixstamps, unixepoch)
+	}
+
+	sort.Sort(AsortFuncInt64(unixstamps))
+	//l := len(unixstamps)
+	var new_msgnum uint64 = 1
+	var writeLines []*string
+	for _, timestamp := range unixstamps {
+		//log.Printf("ReOrderOV timestamp=%d i=%d/l=%d", timestamp, i, l)
+		if debug && len(mapdata[timestamp]) > 1 {
+			log.Printf("ReOrderOV timestamp=%d lmap=%d", timestamp, len(mapdata[timestamp]))
+		}
+		for _, line := range mapdata[timestamp] {
+			datafields := strings.Split(line, "\t")
+			msgid := datafields[4]
+			old_msgnum := utils.Str2uint64(datafields[0])
+			if old_msgnum <= 0 {
+				continue
+			}
+
+			parsedTime := time.Unix(timestamp, 0)
+			rfc5322date := parsedTime.Format(time.RFC1123Z)
+			if old_msgnum != new_msgnum {
+				if debug {
+					log.Printf("ReOrderOV old_msgnum=%d -> new_msgnum=%d rfc5322date='%s' msgid='%s'", old_msgnum, new_msgnum, rfc5322date, msgid)
+				}
+			}
+			//xref := datafields[7]
+			xref := ""
+			subj := datafields[1]
+			if spamfilter(&subj, "subj", &msgid) {
+				log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'subj'", msgid)
+				continue
+			}
+			from := datafields[2]
+			if spamfilter(&from, "from", &msgid) {
+				log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'from'", msgid)
+				continue
+			}
+			date := rfc5322date
+			/*
+				bytes := utils.Str2uint64(datafields[6])
+				var limit_bytes uint64 = 256*1024
+				if bytes > limit_bytes {
+					log.Printf("ReOrderOV IGNORED msgid='%s' bytes=%d", msgid, bytes)
+					continue
+				}
+			*/
+			//date := datafields[3]
+			newline := fmt.Sprintf("%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", new_msgnum, subj, from, date, msgid, datafields[5], datafields[6], datafields[7], xref)
+			writeLines = append(writeLines, &newline)
+			if debug {
+				log.Printf("newline='%s'", newline)
+			}
+			new_msgnum++
+		} // end for mapdata
+	} // end for timestamps
+
+	if len(header) <= 0 || len(header) > 128 || len(footer) != 3 {
+		log.Printf("Error OV ReOrderOverview head=%d foot=%d file='%s'", len(header), len(footer), filepath.Base(*file))
+		return false
+	}
+	if len(writeLines) > 0 {
+		newfh, err := os.Create(newfile)
+		if err != nil {
+			log.Printf("Error OV ReOrderOverview os.Create(newfile='%s') err='%v'", filepath.Base(newfile), err)
+			return false
+		}
+		fmt.Fprintf(newfh, "%s\n", header)
+		for _, line := range writeLines {
+			if line == nil {
+				return false
+			}
+			fmt.Fprintf(newfh, "%s\n", *line)
+		}
+		fmt.Fprintf(newfh, "\x00")
+		err = newfh.Close()
+		if err != nil {
+			log.Printf("Error OV ReOrderOV newfh='%s' err='%v'", filepath.Base(newfile), err)
+			return false
+		}
+		log.Printf("wrote %d lines to newfh='%s'", len(writeLines), filepath.Base(newfile))
+		who := "ReOrderOV"
+		debug_rescan := false
+		retbool, last := Rescan_Overview(&who, newfile, group, 999, debug_rescan)
+		if retbool {
+			log.Printf("OK ReOrderOV Rescan_Overview newfh='%s' retbool=%t last=%d", filepath.Base(newfile), retbool, last)
+			return true
+		}
+		log.Printf("Error OV ReOrderOV Rescan_Overview newfh='%s' retbool=%t last=%d", filepath.Base(newfile), retbool, last)
+
+	}
+	return false
+} // end func ReOrderOverview
+
+var (
+	BAD_FROM = []string{
+		"discounts@iphone",
+	}
+	BAD_SUBJ = []string{
+		"coronavirus",
+		"mushroom",
+		"shrooms",
+	}
+)
+
+func spamfilter(input *string, spamtype string, msgid *string) bool {
+	use_spamfilter := false
+	if !use_spamfilter {
+		return false
+	}
+	if input == nil {
+		log.Printf("Error OV spamfilter input=nil")
+		return true
+	}
+	switch spamtype {
+	case "subj":
+		for _, bad := range BAD_SUBJ {
+			if strings.Contains(strings.ToLower(*input), bad) {
+				log.Printf("spamfilter DROP msgid='%s' subj='%s' bad='%s'", *msgid, *input, bad)
+				return true
+			}
+		}
+	case "from":
+		for _, bad := range BAD_FROM {
+			if strings.Contains(strings.ToLower(*input), bad) {
+				log.Printf("spamfilter DROP msgid='%s' from='%s' bad='%s'", *msgid, *input, bad)
+				return true
+			}
+		}
+	}
+	return false
+} // end func spamfilter
+
+type AsortFuncInt64 []int64
+
+func (nf AsortFuncInt64) Len() int      { return len(nf) }
+func (nf AsortFuncInt64) Swap(i, j int) { nf[i], nf[j] = nf[j], nf[i] }
+func (nf AsortFuncInt64) Less(i, j int) bool {
+	return nf[i] < nf[j]
+}
