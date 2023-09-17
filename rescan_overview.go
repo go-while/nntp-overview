@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
+	//"time"
 )
 
 type CHECK_GROUPS struct {
@@ -34,6 +34,15 @@ func Rescan_help() {
 	os.Exit(0)
 }
 
+func returndefermmapclose(ovfh *OVFH, cancelchan chan struct{}) {
+	select {
+	case <-cancelchan:
+		return
+	default:
+	}
+	utils.MMAP_CLOSE(ovfh.File_path, ovfh.File_handle, ovfh.Mmap_handle, "rw")
+}
+
 // Rescan_Overview returns: true|false, last_msgnum
 func Rescan_Overview(who *string, file_path string, group string, mode int, DEBUG bool) (bool, uint64) {
 	// the steps are:
@@ -44,21 +53,19 @@ func Rescan_Overview(who *string, file_path string, group string, mode int, DEBU
 	// check footer
 
 	log.Printf(" -> Start Rescan_Overview: fp='%s' group='%s' mode=%d", file_path, group, mode)
-
+	//time.Sleep(time.Second)
 	var err error
 	var fix_flag string
-	//var file_handle *os.File
-	//var ovfh.Mmap_handle mmap.MMap
 	ovfh := &OVFH{}
 	ovfh.File_path = file_path
 
 	ovfh.File_handle, ovfh.Mmap_handle, err = utils.MMAP_FILE(file_path, "rw")
 	if err != nil {
-		log.Printf("ERROR Rescan_OV MMAP_FILE err='%v'", err)
+		log.Printf("ERROR Rescan_OV MMAP_FILE err='%v' e01", err)
 		return false, 0
 	}
-
-	defer utils.MMAP_CLOSE(ovfh.File_path, ovfh.File_handle, ovfh.Mmap_handle, "rw")
+	cancelchan := make(chan struct{}, 1)
+	defer returndefermmapclose(ovfh, cancelchan)
 
 	len_mmap := len(ovfh.Mmap_handle)
 
@@ -128,29 +135,6 @@ rescan_OV:
 			// found frees: <nul> bytes
 			if frees > 0 {
 				log.Printf(" --> Rescan_OV frees=%d@i=%d tabs=%d newlines=%d fp='%s'", frees, i, tabs, newlines, filepath.Base(file_path))
-				/*
-					// if we found a nul byte there should only be nuls after
-					// check this + next 5 bytes for \nEOV\n (BODY_END)
-					// further check FOOTER_BEG and verify content from 'time=....,zeropad=,\nEOF\n'
-
-					to := i + 5
-					if to > len_mmap-1 {
-						log.Printf("ERROR Rescan_OV#0a frees=%d pos=%d i=%d to=%d len_mmap=%d reached end-of-file ... footer missing?", frees, position, i, to, len_mmap)
-						if mode == 999 {
-							fix_flag = "fix-footer"
-							break rescan_OV
-						}
-						return false, 0
-					}
-					check_str := string(ovfh.Mmap_handle[i:to])
-					if check_str != BODY_END {
-						log.Printf("ERROR Rescan OV#0b check_str='%s'", check_str)
-						return false, 0
-					}
-				*/
-				// 2023/08/09 09:00:00  ----> Rescan: line=129 msgnum=129 tabs=8 newslines=1 len=131 pos=18545 last_newline_pos=18545
-				// 2023/08/09 09:00:01  --> Rescan_OV frees=115854@i=134400 tabs=0 newlines=1 fp='86a45af09f021b0b9c8859a82392b09292d2ad31a66483fd811eb8910d12b5a2.overview'
-
 				if last_newline_pos+1 != i-frees {
 					log.Printf(" --> ERROR last_newline_pos=%d != i=%d-frees=%d fp='%s'", last_newline_pos, i, frees, filepath.Base(file_path))
 					return false, 0
@@ -472,7 +456,7 @@ rescan_OV:
 				return false, 0
 			} else {
 				log.Printf(" WARN 'mode=999' will try fix-footer fp='%s'", filepath.Base(file_path))
-				time.Sleep(5 * time.Second)
+				//time.Sleep(5 * time.Second)
 			}
 		}
 	} // end if badfooter
@@ -509,19 +493,26 @@ rescan_OV:
 		delete := true
 
 		log.Printf("Rescan_OV badfooter -> fix-footer: last_msgnum=%d ovfh.Findex=%d", last_msgnum, ovfh.Findex)
-
+		//time.Sleep(5*time.Second)
+		preload_zero("PRELOAD_ZERO_1K")
+		//preload_zero("PRELOAD_ZERO_4K")
 		new_ovfh, err = Grow_ov(&who, ovfh, 1, "1K", mode, delete)
-		if err != nil {
-			log.Printf("ERROR Rescan_OV -> fix-footer -> Grow_ov ovfh='%v' err='%v'", ovfh, err)
+		if err != nil || new_ovfh == nil {
+			log.Printf("ERROR Rescan_OV -> fix-footer -> Grow_ov err='%v'", err)
 			return false, 0
 		}
-		if new_ovfh != nil {
-			ovfh = new_ovfh
-		}
-		if ovfh.Time_open > 0 {
+		cancelchan <- struct{}{}
+		/*
+			if new_ovfh != nil {
+				ovfh = new_ovfh
+			}
+		*/
+		if new_ovfh.Time_open > 0 {
 			log.Printf("Rescan OV fix-footer OK, closing")
+			//time.Sleep(5*time.Second)
+
 			//if err = Close_ov(&who, ovfh, false, true); err != nil {
-			if err = handle_close_ov(&who, ovfh, false, true, false); err != nil {
+			if err = handle_close_ov(&who, new_ovfh, false, true, false); err != nil {
 				log.Printf("ERROR Rescan OV fix-footer Close_ov err='%v' fp='%s'", err, filepath.Base(file_path))
 				return false, 0
 			}
@@ -529,7 +520,6 @@ rescan_OV:
 			return true, last_msgnum
 		}
 		log.Printf("Error Final Rescan OV -> Grow_ov returned new_ovfh='%v'", new_ovfh)
-
 	} // end if mode == 999
 
 	log.Printf("ERROR Rescan_OV returned with false badfooter=%t fix_flag='%s'", badfooter, fix_flag)
