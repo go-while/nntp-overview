@@ -2171,6 +2171,15 @@ forfilescanner:
 
 		switch *fields {
 		case "LISTGROUP":
+			line := fmt.Sprintf("%d", msgnum)
+			if conn == nil {
+				lines = append(lines, &line)
+			} else {
+				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
+					return nil, err
+				}
+			}
+		case "XHDR MESSAGE-ID":
 			line := fmt.Sprintf("%d %s", msgnum, datafields[4])
 			if conn == nil {
 				lines = append(lines, &line)
