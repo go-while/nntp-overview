@@ -2169,6 +2169,18 @@ forfilescanner:
 			break
 		}
 
+		/*
+			0 "NUM",
+			1 "Subject:",
+			2 "From:",
+			3 "Date:",
+			4 "Message-ID:",
+			5 "References:",
+			6 "Bytes:",
+			7 "Lines:",
+			8 "Xref:full",
+		*/
+
 		switch *fields {
 		case "LISTGROUP":
 			line := fmt.Sprintf("%d", msgnum)
@@ -2179,8 +2191,71 @@ forfilescanner:
 					return nil, err
 				}
 			}
+		case "XHDR SUBJECT":
+			line := fmt.Sprintf("%d %s", msgnum, datafields[1])
+			if conn == nil {
+				lines = append(lines, &line)
+			} else {
+				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
+					return nil, err
+				}
+			}
+		case "XHDR FROM":
+			line := fmt.Sprintf("%d %s", msgnum, datafields[2])
+			if conn == nil {
+				lines = append(lines, &line)
+			} else {
+				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
+					return nil, err
+				}
+			}
+		case "XHDR DATE":
+			line := fmt.Sprintf("%d %s", msgnum, datafields[3])
+			if conn == nil {
+				lines = append(lines, &line)
+			} else {
+				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
+					return nil, err
+				}
+			}
 		case "XHDR MESSAGE-ID":
 			line := fmt.Sprintf("%d %s", msgnum, datafields[4])
+			if conn == nil {
+				lines = append(lines, &line)
+			} else {
+				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
+					return nil, err
+				}
+			}
+		case "XHDR REFERENCES":
+			line := fmt.Sprintf("%d %s", msgnum, datafields[5])
+			if conn == nil {
+				lines = append(lines, &line)
+			} else {
+				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
+					return nil, err
+				}
+			}
+		case "XHDR BYTES":
+			line := fmt.Sprintf("%d %s", msgnum, datafields[6])
+			if conn == nil {
+				lines = append(lines, &line)
+			} else {
+				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
+					return nil, err
+				}
+			}
+		case "XHDR LINES":
+			line := fmt.Sprintf("%d %s", msgnum, datafields[7])
+			if conn == nil {
+				lines = append(lines, &line)
+			} else {
+				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
+					return nil, err
+				}
+			}
+		case "XHDR XREF":
+			line := fmt.Sprintf("%d %s", msgnum, datafields[8])
 			if conn == nil {
 				lines = append(lines, &line)
 			} else {
