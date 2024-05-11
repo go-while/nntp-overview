@@ -367,7 +367,7 @@ readlines:
 		switch uniq_msgids[msgid] {
 		case true:
 			log.Printf("Ignore Duplicate msgid='%s' file='%s' i=%d", msgid, filepath.Base(*file), i)
-			time.Sleep(time.Second)
+			//time.Sleep(time.Second)
 			continue readlines
 		case false:
 			uniq_msgids[msgid] = true
