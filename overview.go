@@ -82,6 +82,10 @@ var (
 	OV_AUTOINDEX_CHAN       = make(chan *NEWOVI, 1)
 	// The date format layouts to try
 	NNTPDateLayouts = []string{
+		"Monday, _2 Jan 2006 15:04:05 -0700",
+		"Monday, _2 Jan 2006 15:04:05 -0700 (MST)",
+		"Monday, _2 Jan 2006 15:04:05 MST",
+		"Monday, _2 Jan 2006 15:04:05",
 		"Mon, _2 Jan 2006 15:04:05 -0700",
 		"Mon, _2 Jan 2006 15:04:05 -0700 (MST)",
 		"Mon, _2 Jan 2006 15:04:05 MST",
