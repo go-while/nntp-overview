@@ -406,8 +406,35 @@ readlines:
 			from := datafields[2]
 			date := datafields[3]
 			msgid := datafields[4]
-			xref := ""
-			//xref := datafields[7]
+			//xref := ""
+			full_xref_str := datafields[8]
+			var new_xrefs []string
+			// check xrefs
+			xrefs := strings.Split(full_xref_str, " ")
+			// first xref has to be nntp, then group:n
+			if len(xrefs) >= 2 && xrefs[0] == "nntp" {
+				// loop over all xrefs we have
+				loop_xrefs:
+				for x := 1; x < len(xrefs); x++ {
+
+					axref := xrefs[x]
+					xrefdata := strings.Split(axref, ":")
+					len_xrefdata := len(xrefdata)
+
+					if len_xrefdata != 2 {
+						log.Printf("Error ReOrderOV len_xrefdata != 2 old=%d new=%d msgid='%s'", old_msgnum, new_msgnum, msgid)
+						continue loop_xrefs
+					}
+
+					xrefgroup := xrefdata[0]
+					if group != xrefgroup {
+						log.Printf("WARN ReOrderOV IGNORE xrefgroup='%s' msgid='%s'", xrefgroup, msgid)
+						continue loop_xrefs
+					}
+
+					new_xrefs = append(new_xrefs, fmt.Sprintf("%s:%d", xrefgroup, new_msgnum))
+				}
+			}
 			//parsedTime := time.Unix(timestamp, 0)
 			//rfc5322date := parsedTime.Format(time.RFC1123Z)
 			//date := rfc5322date
@@ -436,7 +463,11 @@ readlines:
 					continue
 				}
 			*/
-			newline := fmt.Sprintf("%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", new_msgnum, subj, from, date, msgid, datafields[5], datafields[6], datafields[7], xref)
+			new_xref := "nntp"
+			for x := 0; x < len(new_xrefs); x++ {
+				new_xref = new_xref + " " + new_xrefs[x]
+			}
+			newline := fmt.Sprintf("%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", new_msgnum, subj, from, date, msgid, datafields[5], datafields[6], datafields[7], new_xref)
 			writeLines = append(writeLines, newline)
 			if debug {
 				log.Printf("newline='%s'", newline)
