@@ -2034,50 +2034,49 @@ func isvalidmsgid(astring string, silent bool) bool {
 	return false
 } // end func isvalidmsgid
 
-func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *string, conn net.Conn, initline string, txb *int) ([]*string, error) {
-	if file == nil || a == nil || b == nil {
+func Scan_Overview(file string, group string, a uint64, b uint64, fields string, conn net.Conn, initline string, txb *int) ([]string, error) {
+	if file == "" {
 		return nil, fmt.Errorf("Error Scan_Overview file=nil||a=nil||b=nil")
 	}
 	var offset int64
 
-	if group != nil {
-		index := fmt.Sprintf("%s.Index", *file)
-		offset = OVIndex.ReadOverviewIndex(&index, *group, *a, *b)
+	if group != "" {
+		index := fmt.Sprintf("%s.Index", file)
+		offset = OVIndex.ReadOverviewIndex(index, group, a, b)
 	}
 
-	if *a < 1 {
+	if a < 1 {
 		return nil, fmt.Errorf("Error Scan_Overview a < 1")
 	}
 	//to_end := false
-	if *b == 0 {
+	if b == 0 {
 		//to_end = true
-	} else if *a > *b {
-		return nil, fmt.Errorf("Error Scan_Overview a=%d > b=%d", *a, *b)
+	} else if a > b {
+		return nil, fmt.Errorf("Error Scan_Overview a=%d > b=%d", a, b)
 	}
-	if fields == nil {
-		getfields := "all"
-		fields = &getfields
+	if fields == "" {
+		fields = "all"
 	}
 
-	var lines []*string
-	readFile, err := os.Open(*file)
+	var lines []string
+	readFile, err := os.Open(file)
 	if err != nil {
-		log.Printf("Error Scan_Overview os.Open fp='%s' err='%v'", filepath.Base(*file), err)
+		log.Printf("Error Scan_Overview os.Open fp='%s' err='%v'", filepath.Base(file), err)
 		return lines, err
 	}
 	defer readFile.Close()
 	if offset > 0 {
 		_, err = readFile.Seek(offset, 0)
 		if err != nil {
-			log.Printf("Error Scan_Overview os.Open.Seek fp='%s' offset=%d err='%v'", offset, filepath.Base(*file), err)
+			log.Printf("Error Scan_Overview os.Open.Seek fp='%s' offset=%d err='%v'", offset, filepath.Base(file), err)
 			return nil, err
 		}
-		log.Printf("Scan_Overview SEEK fp='%s' a=%d @offset=%d", filepath.Base(*file), *a, offset)
+		log.Printf("Scan_Overview SEEK fp='%s' a=%d @offset=%d", filepath.Base(file), a, offset)
 	}
 
 	fileScanner := bufio.NewScanner(readFile)
 	maxScan := 4096 // default NewScanner uses 64K buffer
-	if *fields == "ReOrderOV" {
+	if fields == "ReOrderOV" {
 		maxScan = 1024 * 1024
 	}
 	buf := make([]byte, maxScan)
@@ -2086,7 +2085,7 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 	var lc uint64 // linecounter
 	offsets := make(map[uint64]int64)
 	msgnums := []uint64{}
-	log.Printf("Scan_Overview fp='%s' a=%d b=%d maxScan=%d", filepath.Base(*file), *a, *b, maxScan)
+	log.Printf("Scan_Overview fp='%s' a=%d b=%d maxScan=%d", filepath.Base(file), a, b, maxScan)
 
 	if conn != nil {
 		if initline != "" {
@@ -2101,8 +2100,8 @@ func Scan_Overview(file *string, group *string, a *uint64, b *uint64, fields *st
 forfilescanner:
 	for fileScanner.Scan() {
 		line := fileScanner.Text()
-		if *fields == "ReOrderOV" {
-			lines = append(lines, &line)
+		if fields == "ReOrderOV" {
+			lines = append(lines, line)
 			lc++
 			continue forfilescanner
 		}
@@ -2130,7 +2129,7 @@ forfilescanner:
 
 		datafields := strings.Split(line, "\t")
 		if len(datafields) != OVERVIEW_FIELDS {
-			err = fmt.Errorf("Error Scan_Overview lc=%d len(fields)=%d != OVERVIEW_FIELDS=%d file='%s' line='%s'", lc, len(datafields), OVERVIEW_FIELDS, filepath.Base(*file), line)
+			err = fmt.Errorf("Error Scan_Overview lc=%d len(fields)=%d != OVERVIEW_FIELDS=%d file='%s' line='%s'", lc, len(datafields), OVERVIEW_FIELDS, filepath.Base(file), line)
 			log.Printf("%s", err)
 			//return nil, err
 			break forfilescanner
@@ -2142,19 +2141,19 @@ forfilescanner:
 				// expiration removed article from overview
 				continue forfilescanner
 			}
-			err = fmt.Errorf("Error Scan_Overview lc=%d msgnum=0 file='%s'", lc, filepath.Base(*file))
+			err = fmt.Errorf("Error Scan_Overview lc=%d msgnum=0 file='%s'", lc, filepath.Base(file))
 			log.Printf("%s", err)
 			return nil, err
 		}
 
-		if *fields == "NewOVI" {
+		if fields == "NewOVI" {
 			offsets[msgnum] = offset
 			offset += int64(ll) + 1 // + 1 == int64(len(LF))
 			msgnums = append(msgnums, msgnum)
 			continue forfilescanner
 		}
 
-		if msgnum < *a {
+		if msgnum < a {
 			// msgnum is not in range
 			//log.Printf("Scan.Overview msgnum=%d < a=%d lc=%d", msgnum, *a, lc)
 			continue forfilescanner
@@ -2165,7 +2164,7 @@ forfilescanner:
 				// expiration removed article from overview
 				continue forfilescanner
 			}
-			log.Printf("Error Scan_Overview file='%s' lc=%d field[4] err='!isvalidmsgid'", filepath.Base(*file), lc)
+			log.Printf("Error Scan_Overview file='%s' lc=%d field[4] err='!isvalidmsgid'", filepath.Base(file), lc)
 			break
 		}
 
@@ -2181,11 +2180,11 @@ forfilescanner:
 			8 "Xref:full",
 		*/
 
-		switch *fields {
+		switch fields {
 		case "LISTGROUP":
 			line := fmt.Sprintf("%d", msgnum)
 			if conn == nil {
-				lines = append(lines, &line)
+				lines = append(lines, line)
 			} else {
 				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
 					return nil, err
@@ -2194,7 +2193,7 @@ forfilescanner:
 		case "XHDR SUBJECT":
 			line := fmt.Sprintf("%d %s", msgnum, datafields[1])
 			if conn == nil {
-				lines = append(lines, &line)
+				lines = append(lines, line)
 			} else {
 				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
 					return nil, err
@@ -2203,7 +2202,7 @@ forfilescanner:
 		case "XHDR FROM":
 			line := fmt.Sprintf("%d %s", msgnum, datafields[2])
 			if conn == nil {
-				lines = append(lines, &line)
+				lines = append(lines, line)
 			} else {
 				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
 					return nil, err
@@ -2212,7 +2211,7 @@ forfilescanner:
 		case "XHDR DATE":
 			line := fmt.Sprintf("%d %s", msgnum, datafields[3])
 			if conn == nil {
-				lines = append(lines, &line)
+				lines = append(lines, line)
 			} else {
 				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
 					return nil, err
@@ -2221,7 +2220,7 @@ forfilescanner:
 		case "XHDR MESSAGE-ID":
 			line := fmt.Sprintf("%d %s", msgnum, datafields[4])
 			if conn == nil {
-				lines = append(lines, &line)
+				lines = append(lines, line)
 			} else {
 				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
 					return nil, err
@@ -2230,7 +2229,7 @@ forfilescanner:
 		case "XHDR REFERENCES":
 			line := fmt.Sprintf("%d %s", msgnum, datafields[5])
 			if conn == nil {
-				lines = append(lines, &line)
+				lines = append(lines, line)
 			} else {
 				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
 					return nil, err
@@ -2239,7 +2238,7 @@ forfilescanner:
 		case "XHDR BYTES":
 			line := fmt.Sprintf("%d %s", msgnum, datafields[6])
 			if conn == nil {
-				lines = append(lines, &line)
+				lines = append(lines, line)
 			} else {
 				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
 					return nil, err
@@ -2248,7 +2247,7 @@ forfilescanner:
 		case "XHDR LINES":
 			line := fmt.Sprintf("%d %s", msgnum, datafields[7])
 			if conn == nil {
-				lines = append(lines, &line)
+				lines = append(lines, line)
 			} else {
 				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
 					return nil, err
@@ -2257,7 +2256,7 @@ forfilescanner:
 		case "XHDR XREF":
 			line := fmt.Sprintf("%d %s", msgnum, datafields[8])
 			if conn == nil {
-				lines = append(lines, &line)
+				lines = append(lines, line)
 			} else {
 				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
 					return nil, err
@@ -2265,28 +2264,28 @@ forfilescanner:
 			}
 		case "all":
 			if conn == nil {
-				lines = append(lines, &line)
+				lines = append(lines, line)
 			} else {
 				if err := sendlineOV(line+CRLF, conn, txb); err != nil {
 					return nil, err
 				}
 			}
 		case "msgid":
-			lines = append(lines, &datafields[4]) // catches message-id field
-			log.Printf("Scan_Overview returns a=%d b=%d file='%s' msgid='%s'", *a, *b, filepath.Base(*file), datafields[4])
+			lines = append(lines, datafields[4]) // catches message-id field
+			log.Printf("Scan_Overview returns a=%d b=%d file='%s' msgid='%s'", a, b, filepath.Base(file), datafields[4])
 			break forfilescanner
 		default:
-			log.Printf("Error scan_overview unknown *fields=%s", *fields)
+			log.Printf("Error scan_overview unknown *fields=%s", fields)
 			break forfilescanner
 		}
 
-		if msgnum >= *b {
+		if msgnum >= b {
 			break forfilescanner
 		}
 
 	} // end for filescanner
 
-	if *fields == "NewOVI" {
+	if fields == "NewOVI" {
 		indexSize := 100 // gets offsets for every 100 overview entries
 		tmp_offsets := make(map[uint64]int64, indexSize)
 		tmp_msgnums := []uint64{}
@@ -2470,36 +2469,36 @@ func GetMessageID(amsgid string, laxmid bool) (string, error) {
 	return "", fmt.Errorf("ERROR: getMessageID failed amsgid='%s'", amsgid)
 } // end func GetMessageID
 
-func ParseDate(dv *string) (unixepoch int64, err error) {
+func ParseDate(dv string) (unixepoch int64, err error) {
 	debug := false
-	if dv == nil {
+	if dv == "" {
 		return 0, fmt.Errorf("Error OV ParseDate dv=nil")
 	}
 	var parsedTime time.Time
-	*dv = strings.TrimSpace(*dv)
+	dv = strings.TrimSpace(dv)
 	// Try parsing with different layouts
 	for _, layout := range NNTPDateLayouts {
 		//parsedText := extractMatchingText(*dv, layout)
-		parsedTime, err = time.Parse(layout, *dv)
+		parsedTime, err = time.Parse(layout, dv)
 		if err == nil {
 			break
 		}
 		//log.Printf("Error OV ParseDate: dv='%s' err='%v'", *dv, err)
 	}
 	if err != nil {
-		log.Printf("WARN1 OV ParseDate: dv='%s' try extractMatchingText", *dv)
+		log.Printf("WARN1 OV ParseDate: dv='%s' try extractMatchingText", dv)
 		for _, layout := range NNTPDateLayouts {
-			parsedText := extractMatchingText(*dv, layout)
+			parsedText := extractMatchingText(dv, layout)
 			parsedTime, err = time.Parse(layout, parsedText)
 			if err == nil {
-				log.Printf("INFO1 OV ParseDate: dv='%s' parsedText='%s' parsedTime='%s'", *dv, parsedText, parsedTime)
+				log.Printf("INFO1 OV ParseDate: dv='%s' parsedText='%s' parsedTime='%s'", dv, parsedText, parsedTime)
 				break
 			}
 			//log.Printf("Error OV ParseDate: dv='%s' err='%v'", *dv, err)
 		}
 	}
 	if err != nil {
-		return 0, fmt.Errorf("Error OV ParseDate: dv='%s'", *dv)
+		return 0, fmt.Errorf("Error OV ParseDate: dv='%s'", dv)
 	} else {
 		// Convert the parsed time to Unix epoch timestamp
 		epochTimestamp := parsedTime.Unix()
@@ -2507,10 +2506,10 @@ func ParseDate(dv *string) (unixepoch int64, err error) {
 			unixepoch = epochTimestamp
 			//log.Printf("ParseDate dv='%s' RFC3339='%s'", *dv, parsedTime.Format(time.RFC3339))
 			if debug {
-				log.Printf("ParseDate dv='%s' U: %d", *dv, unixepoch)
+				log.Printf("ParseDate dv='%s' U: %d", dv, unixepoch)
 			}
 		} else {
-			log.Printf("Error OV ParseDate dv='%s' epochTimestamp=%d < 0", *dv, parsedTime.Format(time.RFC3339), epochTimestamp)
+			log.Printf("Error OV ParseDate dv='%s' epochTimestamp=%d < 0", dv, parsedTime.Format(time.RFC3339), epochTimestamp)
 		}
 	}
 	return
