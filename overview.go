@@ -90,6 +90,9 @@ var (
 		"Mon, _2 Jan 2006 15:04:05 -0700 (MST)",
 		"Mon, _2 Jan 2006 15:04:05 MST",
 		"Mon, _2 Jan 2006 15:04:05",
+		"Monday, _2 Jan 06 15:04:05 -0700 (MST)",
+		"Monday, _2 Jan 06 15:04:05 -0700",
+		"Monday, _2 Jan 06 15:04:05",
 		"Mon, _2 Jan 06 15:04:05 -0700 (MST)",
 		"Mon, _2 Jan 06 15:04:05 -0700",
 		"Mon, _2 Jan 06 15:04:05",
@@ -2490,12 +2493,12 @@ func ParseDate(dv string) (unixepoch int64, err error) {
 		//log.Printf("Error OV ParseDate: dv='%s' err='%v'", *dv, err)
 	}
 	if err != nil {
-		log.Printf("WARN1 OV ParseDate: dv='%s' try extractMatchingText", dv)
+		if debug { log.Printf("WARN1 OV ParseDate: dv='%s' try extractMatchingText", dv) }
 		for _, layout := range NNTPDateLayouts {
 			parsedText := extractMatchingText(dv, layout)
 			parsedTime, err = time.Parse(layout, parsedText)
 			if err == nil {
-				log.Printf("INFO1 OV ParseDate: dv='%s' parsedText='%s' parsedTime='%s'", dv, parsedText, parsedTime)
+				if debug { log.Printf("INFO1 OV ParseDate: dv='%s' parsedText='%s' parsedTime='%s'", dv, parsedText, parsedTime) }
 				break
 			}
 			//log.Printf("Error OV ParseDate: dv='%s' err='%v'", *dv, err)
