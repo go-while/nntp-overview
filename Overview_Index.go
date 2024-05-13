@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
+	//"time"
 )
 
 func CMD_NewOverviewIndex(file string, group string) bool {
@@ -36,7 +36,7 @@ func CMD_NewOverviewIndex(file string, group string) bool {
 	fields := "NewOVI"
 	_, err := Scan_Overview(file, group, a, b, fields, nil, "", nil)
 	if err != nil {
-		time.Sleep(time.Second)
+		//time.Sleep(time.Second)
 		log.Printf("Error CMD_NewOverviewIndex Scan_Overview err='%v'", err)
 		return false
 	}
@@ -373,8 +373,8 @@ readlines:
 			uniq_msgids[msgid] = true
 		}
 		unixepoch, err := ParseDate(datafields[3])
-		if err != nil {
-			log.Printf("Error OV ReOrderOverview ParseDate file='%s' i=%d err='%v'", filepath.Base(file), i, err)
+		if err != nil || unixepoch == 0 {
+			log.Printf("Error OV ReOrderOverview ParseDate file='%s' i=%d err='%v' unixepoch=%d", filepath.Base(file), i, err, unixepoch)
 			return false
 		}
 		mapdata[unixepoch] = append(mapdata[unixepoch], line)
@@ -445,24 +445,26 @@ readlines:
 				}
 			}
 
-			/*
-				if spamfilter(&subj, "subj", &msgid) {
-					log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'subj'", msgid)
-					continue
-				}
-				from := datafields[2]
-				if spamfilter(&from, "from", &msgid) {
-					log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'from'", msgid)
-					continue
-				}*/
-			/*
+			if spamfilter(subj, "subj", msgid) {
+				log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'subj'", msgid)
+				continue
+			}
+
+			if spamfilter(from, "from", msgid) {
+				log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'from'", msgid)
+				continue
+			}
+
+			doLimitBytes := false
+			if doLimitBytes {
 				bytes := utils.Str2uint64(datafields[6])
-				var limit_bytes uint64 = 256*1024
+				var limit_bytes uint64 = 1024*1024
 				if bytes > limit_bytes {
 					log.Printf("ReOrderOV IGNORED msgid='%s' bytes=%d", msgid, bytes)
 					continue
 				}
-			*/
+			}
+
 			new_xref := "nntp"
 			for x := 0; x < len(new_xrefs); x++ {
 				new_xref = new_xref + " " + new_xrefs[x]
