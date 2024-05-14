@@ -44,7 +44,7 @@ func returndefermmapclose(ovfh *OVFH, cancelchan chan struct{}) {
 }
 
 // Rescan_Overview returns: true|false, last_msgnum
-func Rescan_Overview(who *string, file_path string, group string, mode int, DEBUG bool) (bool, uint64) {
+func Rescan_Overview(who string, file_path string, group string, mode int, DEBUG bool) (bool, uint64) {
 	// the steps are:
 	// check header
 	// check footer ('check footer' runs before 'check lines' or at the end if footer is broken, use mode=4 setting)
@@ -466,7 +466,7 @@ rescan_OV:
 		ov_footer_line := string(ovfh.Mmap_handle[:len_mmap-OV_RESERVE_END])
 		if retbool := check_ovfh_footer(who, ov_footer_line); retbool == false {
 			if mode != 999 {
-				log.Printf("%s ERROR Rescan_OV check_ovfh_footer retbool=%t", *who, retbool)
+				log.Printf("%s ERROR Rescan_OV check_ovfh_footer retbool=%t", who, retbool)
 				return false, 0
 			} else {
 				badfooter = true
@@ -496,7 +496,7 @@ rescan_OV:
 		//time.Sleep(5*time.Second)
 		preload_zero("PRELOAD_ZERO_1K")
 		//preload_zero("PRELOAD_ZERO_4K")
-		new_ovfh, err = Grow_ov(&who, ovfh, 1, "1K", mode, delete)
+		new_ovfh, err = Grow_ov(who, ovfh, 1, "1K", mode, delete)
 		if err != nil || new_ovfh == nil {
 			log.Printf("ERROR Rescan_OV -> fix-footer -> Grow_ov err='%v'", err)
 			return false, 0
@@ -511,8 +511,8 @@ rescan_OV:
 			log.Printf("Rescan OV fix-footer OK, closing")
 			//time.Sleep(5*time.Second)
 
-			//if err = Close_ov(&who, ovfh, false, true); err != nil {
-			if err = handle_close_ov(&who, new_ovfh, false, true, false); err != nil {
+			//if err = Close_ov(who, ovfh, false, true); err != nil {
+			if err = handle_close_ov(who, new_ovfh, false, true, false); err != nil {
 				log.Printf("ERROR Rescan OV fix-footer Close_ov err='%v' fp='%s'", err, filepath.Base(file_path))
 				return false, 0
 			}

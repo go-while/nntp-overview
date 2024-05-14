@@ -195,26 +195,27 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file string, group string, a uint64,
 } // end func ReadOverviewIndex
 
 type OverviewIndex struct {
-	mux            sync.RWMutex
+	mux            sync.Mutex
 	IndexMap       map[string]map[uint64]int64 // data[group][msgnum]offset
-	IndexCache     []string
+	IndexCache     []string // rotating list with cached index groups
 	IndexCacheSize int // number of groups we cache an index for
 }
 
 func (ovi *OverviewIndex) SetOVIndexCacheOffset(group string, fnum uint64, offset int64) {
 	log.Printf("SetOVIndexCacheOffset group='%s' fnum=%d offset=%d", group, fnum, offset)
+	ovi.IndexCacheSize = 4096 // *hardcoded* keeps indexed offsets for this amount of groups in cache
+
 	ovi.mux.Lock()
-	defer ovi.mux.Unlock()
 	if ovi.IndexMap == nil {
-		ovi.IndexCacheSize = 4096 // keeps offsets for this amount of groups in cache
 		ovi.IndexMap = make(map[string]map[uint64]int64, ovi.IndexCacheSize)
 	}
 	if ovi.IndexMap[group] == nil {
 		// memoryleak! map without limit caches infinite amount of index offsets for group
 		ovi.IndexMap[group] = make(map[uint64]int64)
 	}
+
 	// check if map is full
-	if len(ovi.IndexMap[group]) == ovi.IndexCacheSize {
+	if len(ovi.IndexMap) == ovi.IndexCacheSize {
 		delgroup := ovi.IndexCache[0]
 		ovi.IndexCache = ovi.IndexCache[1:] // pops [0]
 		if delgroup != group {
@@ -222,10 +223,10 @@ func (ovi *OverviewIndex) SetOVIndexCacheOffset(group string, fnum uint64, offse
 		} else {
 			ovi.IndexCache = append(ovi.IndexCache, delgroup) // re-append to top
 		}
-
 	}
 	ovi.IndexMap[group][fnum] = offset
 	ovi.IndexCache = append(ovi.IndexCache, group)
+	ovi.mux.Unlock()
 } // end func SetOVIndexCacheOffset
 
 func (ovi *OverviewIndex) GetOVIndexCacheOffset(group string, a uint64) (offset int64) {
@@ -242,8 +243,8 @@ func (ovi *OverviewIndex) GetOVIndexCacheOffset(group string, a uint64) (offset 
 	floored := ((a / 100) * 100)
 	//log.Printf("Try GetOVIndexCacheOffset group='%s' a=%d floored=%d", group, a, floored)
 
-	ovi.mux.RLock()
-	defer ovi.mux.RUnlock()
+	ovi.mux.Lock()
+	defer ovi.mux.Unlock()
 
 	if ovi.IndexMap == nil {
 		return
@@ -504,7 +505,7 @@ readlines:
 		log.Printf("wrote %d lines to newfh='%s'", len(writeLines), filepath.Base(newfile))
 		who := "ReOrderOV"
 		debug_rescan := false
-		retbool, last := Rescan_Overview(&who, newfile, group, 999, debug_rescan)
+		retbool, last := Rescan_Overview(who, newfile, group, 999, debug_rescan)
 		if retbool {
 			log.Printf("OK ReOrderOV Rescan_Overview newfh='%s' retbool=%t last=%d", filepath.Base(newfile), retbool, last)
 			return true

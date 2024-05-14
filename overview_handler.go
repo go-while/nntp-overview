@@ -26,18 +26,18 @@ type OV_Handler struct {
 	CLOSE_ALWAYS   bool
 }
 
-func (oh *OV_Handler) GetOpen(hid int, who *string, file_path string, hash string) (*OVFH, bool) {
+func (oh *OV_Handler) GetOpen(hid int, who string, file_path string, hash string) (*OVFH, bool) {
 
 	if retbool, ch := open_mmap_overviews.lockMMAP(hid, who, hash, Overview.signal_chans[hid]); retbool == false && ch != nil {
 		<-ch // wait for anyone to return the unlock for this group
 	} else if retbool == false && ch == nil {
 		// could not lock and didnt return a signal channel? should never happen he says!
-		log.Printf("%s WARN GetOpen lockMMAP retry hash='%s'", *who, hash)
+		log.Printf("%s WARN GetOpen lockMMAP retry hash='%s'", who, hash)
 		time.Sleep(1 * time.Millisecond)
 		return OV_handler.GetOpen(hid, who, file_path, hash)
 	} else {
 		if oh.Debug {
-			log.Printf("%s TRUE GetOpen -> lockMMAP retbool=%t hash='%s'", *who, retbool, hash)
+			log.Printf("%s TRUE GetOpen -> lockMMAP retbool=%t hash='%s'", who, retbool, hash)
 		}
 	}
 
@@ -47,14 +47,14 @@ func (oh *OV_Handler) GetOpen(hid int, who *string, file_path string, hash strin
 
 	if mapdata.hid < 0 {
 		oh.mux.Unlock()
-		log.Printf("%s GetOpen retry isin flush/force_close? hid=%d hash='%s'", *who, mapdata.hid, hash)
+		log.Printf("%s GetOpen retry isin flush/force_close? hid=%d hash='%s'", who, mapdata.hid, hash)
 		time.Sleep(1 * time.Millisecond)
 		return OV_handler.GetOpen(hid, who, file_path, hash)
 	}
 
 	if mapdata.hid > 0 && mapdata.hid != hid {
 		oh.mux.Unlock()
-		log.Printf("%s GetOpen retry isassigned hid=%d hash='%s'", *who, mapdata.hid, hash)
+		log.Printf("%s GetOpen retry isassigned hid=%d hash='%s'", who, mapdata.hid, hash)
 		time.Sleep(1 * time.Millisecond)
 		return OV_handler.GetOpen(hid, who, file_path, hash)
 	}
@@ -62,17 +62,17 @@ func (oh *OV_Handler) GetOpen(hid int, who *string, file_path string, hash strin
 	if !utils.FileExists(file_path) {
 		if err := Create_ov(who, file_path, hash, 3); err != nil {
 			oh.mux.Unlock()
-			log.Printf("%s FATAL ERROR Create_ov hash='%s' err='%v'", *who, hash, err)
+			log.Printf("%s FATAL ERROR Create_ov hash='%s' err='%v'", who, hash, err)
 			OV_handler.KILL(who)
 			return nil, false
 		}
 		if oh.Debug {
-			log.Printf("%s Create_ov hash='%s' OK", *who, hash)
+			log.Printf("%s Create_ov hash='%s' OK", who, hash)
 		}
 	}
 
 	if oh.Debug {
-		log.Printf("%s OK GetOpen after lockMMAP hash='%s'", *who, hash)
+		log.Printf("%s OK GetOpen after lockMMAP hash='%s'", who, hash)
 	}
 
 	// was not assigned, assign now to us
@@ -83,7 +83,7 @@ func (oh *OV_Handler) GetOpen(hid int, who *string, file_path string, hash strin
 		oh.V[hash] = mapdata // updates the hid
 		oh.mux.Unlock()
 		if oh.Debug {
-			log.Printf("%s GetOpen returned mapdata.open=true hash='%s'", *who, hash)
+			log.Printf("%s GetOpen returned mapdata.open=true hash='%s'", who, hash)
 		}
 		return ovfh, true
 	}
@@ -93,22 +93,22 @@ func (oh *OV_Handler) GetOpen(hid int, who *string, file_path string, hash strin
 	oh.mux.Unlock()
 
 	if ovfh, err := handle_open_ov(who, hash, file_path); err != nil {
-		log.Printf("%s ERROR (OPENER) Open_ov err='%v' fp='%s'", *who, err, filepath.Base(file_path))
+		log.Printf("%s ERROR (OPENER) Open_ov err='%v' fp='%s'", who, err, filepath.Base(file_path))
 		//reply.err = err
 		//open_errors++
 	} else {
 
 		if oh.Debug {
-			log.Printf("%s GetOpen before count_open_overviews=%d/%d", *who, len(count_open_overviews), cap(count_open_overviews))
+			log.Printf("%s GetOpen before count_open_overviews=%d/%d", who, len(count_open_overviews), cap(count_open_overviews))
 		}
 		count_open_overviews <- struct{}{} // pass an empty struct into the open_file counter channel
 		if oh.Debug {
-			log.Printf("%s GetOpen afters count_open_overviews=%d/%d", *who, len(count_open_overviews), cap(count_open_overviews))
+			log.Printf("%s GetOpen afters count_open_overviews=%d/%d", who, len(count_open_overviews), cap(count_open_overviews))
 		}
 
 		if OV_handler.SetOpen(hid, who, ovfh) {
 			if DEBUG_OV {
-				log.Printf("%s SetOpen TRUE fp='%s'", *who, filepath.Base(file_path))
+				log.Printf("%s SetOpen TRUE fp='%s'", who, filepath.Base(file_path))
 			}
 			//reply.ovfh = ovfh
 			//reply.retbool = true
@@ -116,7 +116,7 @@ func (oh *OV_Handler) GetOpen(hid int, who *string, file_path string, hash strin
 			//opened++
 			return ovfh, true
 		} else {
-			log.Printf("%s FATAL ERROR (OPENER) OV_handler.SetOpen failed!", *who)
+			log.Printf("%s FATAL ERROR (OPENER) OV_handler.SetOpen failed!", who)
 			OV_handler.KILL(who)
 		}
 	}
@@ -126,10 +126,10 @@ func (oh *OV_Handler) GetOpen(hid int, who *string, file_path string, hash strin
 	return nil, false
 } // end func OV_Handler.GetOpen
 
-func (oh *OV_Handler) SetOpen(hid int, who *string, ovfh *OVFH) bool {
+func (oh *OV_Handler) SetOpen(hid int, who string, ovfh *OVFH) bool {
 	retval := false
 	if oh.Debug {
-		log.Printf("%s SetOpen hash='%s'", *who, ovfh.Hash)
+		log.Printf("%s SetOpen hash='%s'", who, ovfh.Hash)
 	}
 
 	oh.mux.Lock()
@@ -143,14 +143,14 @@ func (oh *OV_Handler) SetOpen(hid int, who *string, ovfh *OVFH) bool {
 		retval = true
 		oh.V[ovfh.Hash] = mapdata
 	} else {
-		log.Printf("%s ERROR SetOpen invalid mapdata.hid=%d open=%t preopen=%t idle=%d", *who, mapdata.hid, mapdata.open, mapdata.preopen, mapdata.idle)
+		log.Printf("%s ERROR SetOpen invalid mapdata.hid=%d open=%t preopen=%t idle=%d", who, mapdata.hid, mapdata.open, mapdata.preopen, mapdata.idle)
 		OV_handler.KILL(who)
 	}
 	oh.mux.Unlock()
 	return retval
 } // end func OV_Handler.SetOpen
 
-func (oh *OV_Handler) Park(hid int, who *string, ovfh *OVFH) bool {
+func (oh *OV_Handler) Park(hid int, who string, ovfh *OVFH) bool {
 	retval := false
 	oh.mux.Lock()
 	mapdata := oh.V[ovfh.Hash]
@@ -162,7 +162,7 @@ func (oh *OV_Handler) Park(hid int, who *string, ovfh *OVFH) bool {
 		oh.V[ovfh.Hash] = mapdata
 		retval = true
 	} else {
-		log.Printf("%s FATAL ERROR Park mapdata.hid=%d mapdata.open=%t mapdata.preopen=%t hash='%s'", *who, hid, mapdata.hid, mapdata.open, mapdata.preopen, ovfh.Hash)
+		log.Printf("%s FATAL ERROR Park mapdata.hid=%d mapdata.open=%t mapdata.preopen=%t hash='%s'", who, hid, mapdata.hid, mapdata.open, mapdata.preopen, ovfh.Hash)
 		OV_handler.KILL(who)
 	}
 	oh.mux.Unlock()
@@ -209,7 +209,7 @@ func (oh *OV_Handler) Check_idle() {
 					continue find_idles
 				} else {
 					log.Printf("%s FATAL ERROR OV Check_idle hash='%s' != data.ovfh.Hash='%s'", who, hash, data.ovfh.Hash)
-					OV_handler.KILL(&who)
+					OV_handler.KILL(who)
 					oh.mux.Unlock()
 					return
 				}
@@ -297,7 +297,7 @@ for_opener:
 				break for_opener
 			}
 			// got open_request for overview file ( Overview_Open_Request = { hash, file_path, reply_chan } )
-			if OV_handler.process_open_request(hid, &who, open_request) {
+			if OV_handler.process_open_request(hid, who, open_request) {
 				opened++
 			} else {
 				open_errors++
@@ -330,7 +330,7 @@ for_closer:
 				break for_closer
 			}
 			// got close_request for overview file ( Overview_Close_Request = { ovfh, reply_chan } )
-			if OV_handler.process_close_request(hid, &who, close_request) {
+			if OV_handler.process_close_request(hid, who, close_request) {
 				closed++
 			} else {
 				log.Printf("%s OV_handler.process_close_request returned false", who)
@@ -350,7 +350,7 @@ func (oh *OV_Handler) open_overviews() int {
 }
 */
 
-func (oh *OV_Handler) process_close_request(hid int, who *string, close_request Overview_Close_Request) bool {
+func (oh *OV_Handler) process_close_request(hid int, who string, close_request Overview_Close_Request) bool {
 	retval := false
 	//force_close := true
 
@@ -363,7 +363,7 @@ func (oh *OV_Handler) process_close_request(hid int, who *string, close_request 
 
 	file := filepath.Base(close_request.ovfh.File_path)
 	if oh.Debug {
-		log.Printf("(CLOSER) %s close_request force_close=%t fp='%s'", *who, force_close, file)
+		log.Printf("(CLOSER) %s close_request force_close=%t fp='%s'", who, force_close, file)
 	}
 
 	var reply Overview_Reply
@@ -380,12 +380,12 @@ func (oh *OV_Handler) process_close_request(hid int, who *string, close_request 
 			force_close = true
 		} else if lastflush >= MAX_FLUSH && wrote > OV_RESERVE_END {
 			if new_ovfh, err := Update_Footer(who, close_request.ovfh, "OV_H:process_close_request"); err != nil {
-				log.Printf("FATAL ERROR (CLOSER) %s process_close_request Update_Footer failed err='%v' fp='%s", *who, err, file)
+				log.Printf("FATAL ERROR (CLOSER) %s process_close_request Update_Footer failed err='%v' fp='%s", who, err, file)
 				reply.err = err
 				OV_handler.KILL(who)
 			} else {
 				if oh.Debug {
-					log.Printf("(CLOSER) %s process_close_request flushed lastflush=%d fp='%s", *who, lastflush, file)
+					log.Printf("(CLOSER) %s process_close_request flushed lastflush=%d fp='%s", who, lastflush, file)
 				}
 				if new_ovfh != nil && new_ovfh.Mmap_handle != nil {
 					close_request.ovfh = new_ovfh
@@ -395,7 +395,7 @@ func (oh *OV_Handler) process_close_request(hid int, who *string, close_request 
 
 			if err := Flush_ov(who, close_request.ovfh); err != nil {
 				// flush failed
-				log.Printf("FATAL ERROR (CLOSER)  %s Flush_ov failed fp='%s", *who, file)
+				log.Printf("FATAL ERROR (CLOSER)  %s Flush_ov failed fp='%s", who, file)
 				reply.err = err
 				OV_handler.KILL(who)
 			} else {
@@ -420,7 +420,7 @@ func (oh *OV_Handler) process_close_request(hid int, who *string, close_request 
 			retval = true
 			reply.retbool = retval
 		} else {
-			log.Printf("ERROR (CLOSER) %s Close_ov err='%v' fp='%s'", *who, err, file)
+			log.Printf("ERROR (CLOSER) %s Close_ov err='%v' fp='%s'", who, err, file)
 			reply.err = err
 			//close_errors++
 		}
@@ -442,7 +442,7 @@ func (oh *OV_Handler) process_close_request(hid int, who *string, close_request 
 	return retval
 } // end func process_close_request
 
-func (oh *OV_Handler) process_open_request(hid int, who *string, open_request Overview_Open_Request) bool {
+func (oh *OV_Handler) process_open_request(hid int, who string, open_request Overview_Open_Request) bool {
 	retval := false
 	/*
 		if is_closed_server(oh.STOP) {
@@ -472,7 +472,7 @@ func (oh *OV_Handler) process_open_request(hid int, who *string, open_request Ov
 	return retval
 } // end func process_open_request
 
-func (oh *OV_Handler) KILL(who *string) {
-	log.Printf("ERROR %s KILL", *who)
+func (oh *OV_Handler) KILL(who string) {
+	log.Printf("ERROR %s KILL", who)
 	oh.STOP <- true
 }
