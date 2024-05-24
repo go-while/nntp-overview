@@ -344,12 +344,6 @@ for_closer:
 	}
 } // end func Overview_handler_CLOSER
 
-/*
-func (oh *OV_Handler) open_overviews() int {
-	return len(count_open_overviews)
-}
-*/
-
 func (oh *OV_Handler) process_close_request(hid int, who string, close_request Overview_Close_Request) bool {
 	retval := false
 	//force_close := true
@@ -378,6 +372,7 @@ func (oh *OV_Handler) process_close_request(hid int, who string, close_request O
 			// if written==OV_RESERVE_END: file has only updated the footer and 0 writes since prev flush
 			// force_close mmap.
 			force_close = true
+
 		} else if lastflush >= MAX_FLUSH && wrote > OV_RESERVE_END {
 			if new_ovfh, err := Update_Footer(who, close_request.ovfh, "OV_H:process_close_request"); err != nil {
 				log.Printf("FATAL ERROR (CLOSER) %s process_close_request Update_Footer failed err='%v' fp='%s", who, err, file)

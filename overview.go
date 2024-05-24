@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	//"sync"
+	"database/sql"
 	"time"
 	"unicode"
 )
@@ -22,9 +23,9 @@ const (
 	null string = "\x00"
 	tab  string = "\010"
 
-	XREF_PREFIX = "nntp"
+	XREF_PREFIX = "nntp" // todo: hardcoded fix: should be a variable hostname?
 
-	MAX_FLUSH int64 = 1 // flush mmaps every N seconds
+	MAX_FLUSH int64 = 5 // flush mmaps every N seconds
 
 	LIMIT_SPLITMAX_NEWSGROUPS int = 25
 	MAX_REF                   int = 30
@@ -82,34 +83,200 @@ var (
 	OV_AUTOINDEX_CHAN       = make(chan *NEWOVI, 1)
 	// The date format layouts to try
 	NNTPDateLayouts = []string{
+
 		"Monday, _2 Jan 2006 15:04:05 -0700",
 		"Monday, _2 Jan 2006 15:04:05 -0700 (MST)",
 		"Monday, _2 Jan 2006 15:04:05 MST",
 		"Monday, _2 Jan 2006 15:04:05",
 		"Monday, _2 Jan 2006 15:04",
+		"Monday, _2 Jan 2006",
+		"Monday, _2 January 2006 15:04:05 -0700",
+		"Monday, _2 January 2006 15:04:05 -0700 (MST)",
+		"Monday, _2 January 2006 15:04:05 MST",
+		"Monday, _2 January 2006 15:04:05",
+		"Monday, _2 January 2006 15:04",
+		"Monday, _2 January 2006",
+
+		"Monday, _2 Jan 06 15:04:05 -0700 (MST)",
+		"Monday, _2 Jan 06 15:04:05 -0700",
+		"Monday, _2 Jan 06 15:04:05 MST",
+		"Monday, _2 Jan 06 15:04:05",
+		"Monday, _2 Jan 06 15:04",
+		"Monday, _2 Jan 06",
+		"Monday, _2 January 06 15:04:05 -0700 (MST)",
+		"Monday, _2 January 06 15:04:05 -0700",
+		"Monday, _2 January 06 15:04:05 MST",
+		"Monday, _2 January 06 15:04:05",
+		"Monday, _2 January 06 15:04",
+		"Monday, _2 January 06",
+
 		"Mon, _2 Jan 2006 15:04:05 -0700",
 		"Mon, _2 Jan 2006 15:04:05 -0700 (MST)",
 		"Mon, _2 Jan 2006 15:04:05 MST",
 		"Mon, _2 Jan 2006 15:04:05",
+		"Mon, _2 Jan 2006 15:04 -0700",
 		"Mon, _2 Jan 2006 15:04",
-		"Monday, _2 Jan 06 15:04:05 -0700 (MST)",
-		"Monday, _2 Jan 06 15:04:05 -0700",
-		"Monday, _2 Jan 06 15:04:05",
-		"Monday, _2 Jan 06 15:04",
+		"Mon, _2 Jan 2006",
+		"Mon, _2 January 2006 15:04:05 -0700",
+		"Mon, _2 January 2006 15:04:05 -0700 (MST)",
+		"Mon, _2 January 2006 15:04:05 MST",
+		"Mon, _2 January 2006 15:04:05",
+		"Mon, _2 January 2006 15:04 -0700",
+		"Mon, _2 January 2006 15:04",
+		"Mon, _2 January 2006",
+		// Tue, 22 Feb 94 06:15:56 Mst
 		"Mon, _2 Jan 06 15:04:05 -0700 (MST)",
 		"Mon, _2 Jan 06 15:04:05 -0700",
+		"Mon, _2 Jan 06 15:04:05 MST",
 		"Mon, _2 Jan 06 15:04:05",
 		"Mon, _2 Jan 06 15:04",
+		"Mon, _2 Jan 06",
+		"Mon, _2 January 06 15:04:05 -0700 (MST)",
+		"Mon, _2 January 06 15:04:05 -0700",
+		"Mon, _2 January 06 15:04:05 MST",
+		"Mon, _2 January 06 15:04:05",
+		"Mon, _2 January 06 15:04",
+		"Mon, _2 January 06",
+
 		"_2 Jan 2006 15:04:05 -0700 (MST)",
 		"_2 Jan 2006 15:04:05 -0700",
 		"_2 Jan 2006 15:04:05 MST",
 		"_2 Jan 2006 15:04:05",
+		"_2 Jan 2006 15:04 MST",
 		"_2 Jan 2006 15:04",
+		"_2 Jan 2006",
+		"_2 January 2006 15:04:05 -0700 (MST)",
+		"_2 January 2006 15:04:05 -0700",
+		"_2 January 2006 15:04:05 MST",
+		"_2 January 2006 15:04:05",
+		"_2 January 2006 15:04 MST",
+		"_2 January 2006 15:04",
+		"_2 January 2006",
+
 		"_2 Jan 06 15:04:05 -0700 (MST)",
 		"_2 Jan 06 15:04:05 -0700",
 		"_2 Jan 06 15:04:05 MST",
 		"_2 Jan 06 15:04:05",
 		"_2 Jan 06 15:04",
+		"_2 Jan 06",
+		"_2 January 06 15:04:05 -0700 (MST)",
+		"_2 January 06 15:04:05 -0700",
+		"_2 January 06 15:04:05 MST",
+		"_2 January 06 15:04:05",
+		"_2 January 06 15:04",
+		"_2 January 06",
+
+		"Jan _2, 2006 15:04:05 -0700 (MST)",
+		"Jan _2, 2006 15:04:05 -0700",
+		"Jan _2, 2006 15:04:05 MST",
+		"Jan _2, 2006 15:04:05",
+		"Jan _2, 2006 15:04",
+		"Jan _2, 2006",
+		"January _2, 2006 15:04:05 -0700 (MST)",
+		"January _2, 2006 15:04:05 -0700",
+		"January _2, 2006 15:04:05 MST",
+		"January _2, 2006 15:04:05",
+		"January _2, 2006 15:04",
+		"January _2, 2006",
+
+		"Jan _2, 06 15:04:05 -0700 (MST)",
+		"Jan _2, 06 15:04:05 -0700",
+		"Jan _2, 06 15:04:05 MST",
+		"Jan _2, 06 15:04:05",
+		"Jan _2, 06 15:04",
+		"Jan _2, 06",
+		"January _2, 06 15:04:05 -0700 (MST)",
+		"January _2, 06 15:04:05 -0700",
+		"January _2, 06 15:04:05 MST",
+		"January _2, 06 15:04:05",
+		"January _2, 06 15:04",
+		"January _2, 06",
+
+		// weird formats from importing archives....
+		// Friday, 20-Jun-10 16:14:55 GMT
+		"Monday, _2-Jan-06 15:04:05 MST",
+		// Sat, 26 Nov 1994 10:12:43 LOCAL
+		"Mon, _2 Jan 2006 15:04:05 LOCAL",
+		"Mon, _2 Jan 06 15:04:05 LOCAL",
+		// Fri, 7 Oct 1994 17:12:13
+		"Mon, _2 Jan 2006 15:04:05 UNDEFINED",
+		"Mon, _2 Jan 06 15:04:05 UNDEFINED",
+		// August 20, 2009 10:49:52 AM CEST
+		"January _2, 2006 15:04:05 PM MST",
+		"Jan _2, 2006 15:04:05 PM MST",
+		// Wed, 31-Dec-69 18:59:59 EDT
+		"Mon, _2-Jan-06 15:04:05 MST",
+		// Fri Apr 8 00:49:21 1983
+		"Mon Jan _2 15:04:05 2006",
+		// Thu, 28 Feb 2002 16: 8:48 GMT
+		"Mon, _2 Jan 2006 15: 4:05 MST",
+		// Tue, 27 Dec 1994 23:8:0 GMT
+		"Mon, _2 Jan 2006 15:4:5 MST",
+		"Mon, _2 Jan 2006 15:4:5",
+		"Mon, _2 Jan 2006 15:4:05 MST",
+		"Mon, _2 Jan 2006 15:4:05",
+		// Tue, 6 Sep 94 21:2:22 GMT
+		"Mon, _2 Jan 06 15:4:5 MST",
+		"Mon, _2 Jan 06 15:4:5",
+		"Mon, _2 Jan 06 15:4:05 MST",
+		"Mon, _2 Jan 06 15:4:05",
+		// Fri,23 Feb 2001 17:14:11 MST'
+		"Mon,_2 Jan 2006 15:04:05 MST",
+		// Fri,23 Feb 2001 17:14:11+2000'
+		"Mon,_2 Jan 2006 15:04:05-0700",
+		// Tue,12 May 2005 13:33:40 GMT +0200
+		"Mon,_2 Jan 2006 15:04:05 MST -0700",
+		// Mon, 9 July 2001 12:45:45 -0700
+		"Mon, _2 January 2006 15:04:05 -0700",
+		// Monday, 6 June 1994 17:07:49 PDT
+		"Monday, _2 January 2006 15:04:05 MST",
+		// Wed,12 Jun 2002 09:00:46
+		"Mon,_2 Jan 2006 15:04:05",
+		// 20 oct. 2009 22:05:25
+		"_2 Jan. 2006 15:04:05",
+		// 16 Jul 2002 19:8:33
+		"_2 Jan 2006 15:4:5",
+		// 16 April 1994 13:01:21 EDT
+		"_2 January 2006 15:04:05 MST",
+		// 22 Apr 92 14:2:44 GMT
+		"_2 Jan 06 15:4:5 MST",
+		"_2 Jan 06 15:4:05 MST",
+		// 29Aug 2006 21:11:48 -0600
+		"_2Jan 2006 15:04:05 -0700",
+		// Wes, 23 Jun 2010 11:24:30 -0500
+		"_2 Jan 2006 15:04:05 -0700",
+		// 21-Jan-2005 13:38:02 PST
+		"_2-Jan-2006 15:04:05 MST -0700",
+		"_2-Jan-2006 15:04:05 MST",
+		"_2-Jan-2006 15:04:05 -0700",
+		// Mon, 17 Nov 2003 10 53 35 +0100
+		"Mon, _2 Jan 2006 15 04 05 MST -0700",
+		"Mon, _2 Jan 2006 15 04 05 -0700",
+		// , 10 Dec 2006 16:55:9 -0000
+		", _2 Jan 2006 15:04:5 -0700",
+		", _2 Jan 2006 15:4:5 -0700",
+		// Sat 23 Jun 2023 23:23:23 PM UTC
+		"Mon _2 Jan 2006 15:04:05 PM MST",
+		// Monday,02 July 2001 12:23:48 AM
+		"Monday,_2 Jan 2006 15:04:05 PM MST",
+		// Sun,31 Dec 95 17:11:30 -0500
+		"Mon,_2 Jan 06 15:04:05 -0700",
+		// Fr, 20 Feb 2004 16:11:20 +0100
+		"Mo, _2 Jan 2006 15:04:05 -0700",
+		// Fri,28 Sep 94 16:11:41 GMT
+		"Mon,_2 Jan 06 15:04:05 MST",
+		// Wen, 17 May 2006 10:11:41 -0100
+		"Mon, _2 Jan 2006 15:04:05 -0700",
+		// Fri, 23-Apr-2004 23:43:27 +0200
+		"Mon, _2-Jan-2006 15:04:05 -0700",
+		// Fri 31 Aug 2012 22:45:37 -0400
+		"Mon _2 Jan 2006 15:04:05 -0700",
+		// Sun, Jun 17 2001 23:17:17 GMT+0200
+		"Mon, Jan _2 2006 15:04:05 MST-0700",
+		// 18-Feb-90 20:52 CST
+		"_2-Jan-06 15:04 MST",
+		// Date: Tue, 19 Jun 2007 13:09:02 GMT
+		"Date: Tue, _2 Jun 2006 15:04:05 MST",
 	}
 )
 
@@ -506,8 +673,8 @@ func (ov *OV) di_ov(who string, ovl OVL) []*ReturnChannelData {
 
 func Construct_OVL(ovl OVL) string {
 	// construct an overview line
-	MAX_REF := 30
-	ref_len, ref_len_limit := 0, 1024
+	MAX_REF := 100
+	ref_len, ref_len_limit := 0, 16384
 	var references string
 	for i, ref := range ovl.References {
 		len_ref := len(ref)
@@ -1193,6 +1360,13 @@ func handle_open_ov(who string, hash string, file_path string) (*OVFH, error) {
 	var ov_footer string
 	cs := 0
 
+	/*
+		file_path_new := file_path + ".new"
+		if utils.FileExists(file_path_new) {
+			log.Printf("%s INFO handle_open_ov fp='%s.new'", who, file_path)
+			file_path = file_path_new
+		} else
+	*/
 	if !utils.FileExists(file_path) {
 		return nil, fmt.Errorf("%s ERROR handle_open_ov !fileExists fp='%s'", who, file_path)
 	}
@@ -1296,7 +1470,6 @@ func Close_ov(who string, ovfh *OVFH, update_footer bool, force_close bool) erro
 	if force_close {
 		close_request.force_close = true
 	}
-	//globalCounter.Inc("wait_close_request")
 	close_request_chan <- close_request
 	// wait for reply
 	if DEBUG_OV {
@@ -1307,7 +1480,6 @@ func Close_ov(who string, ovfh *OVFH, update_footer bool, force_close bool) erro
 	if DEBUG_OV {
 		log.Printf("%s GOT REPLY Close_ov -> reply_chan fp='%s'", who, file)
 	}
-	//globalCounter.Dec("wait_close_request")
 	if reply.err == nil {
 		if DEBUG_OV {
 			log.Printf("%s OK REPLY Close_ov -> fp='%s'", who, file)
@@ -2102,7 +2274,7 @@ func Scan_Overview(file string, group string, a uint64, b uint64, fields string,
 	var lc uint64 // linecounter
 	offsets := make(map[uint64]int64)
 	msgnums := []uint64{}
-	log.Printf("Scan_Overview fp='%s' a=%d b=%d maxScan=%d", filepath.Base(file), a, b, maxScan)
+	//log.Printf("Scan_Overview fp='%s' a=%d b=%d maxScan=%d", filepath.Base(file), a, b, maxScan)
 
 	if conn != nil {
 		if initline != "" {
@@ -2183,6 +2355,10 @@ forfilescanner:
 			}
 			log.Printf("Error Scan_Overview file='%s' lc=%d field[4] err='!isvalidmsgid'", filepath.Base(file), lc)
 			break
+		}
+		// view-filter
+		if fields == "all" && strings.HasSuffix(datafields[4], "googlegroups.com>") {
+			continue forfilescanner
 		}
 
 		/*
@@ -2495,42 +2671,49 @@ func ParseDate(dv string) (unixepoch int64, err error) {
 	dv = strings.TrimSpace(dv)
 	// Try parsing with different layouts
 	for _, layout := range NNTPDateLayouts {
-		//parsedText := extractMatchingText(*dv, layout)
 		parsedTime, err = time.Parse(layout, dv)
 		if err == nil {
 			break
 		}
 		//log.Printf("Error OV ParseDate: dv='%s' err='%v'", *dv, err)
 	}
+	/* todo: stupid bruteforce need rethink? */
 	if err != nil {
-		if debug { log.Printf("WARN1 OV ParseDate: dv='%s' try extractMatchingText", dv) }
+		if debug {
+			log.Printf("WARN1 OV ParseDate: dv='%s' try extractMatchingText", dv)
+		}
 		for _, layout := range NNTPDateLayouts {
 			parsedText := extractMatchingText(dv, layout)
 			parsedTime, err = time.Parse(layout, parsedText)
 			if err == nil {
-				if debug { log.Printf("INFO1 OV ParseDate: dv='%s' parsedText='%s' parsedTime='%s'", dv, parsedText, parsedTime) }
+				if debug {
+					log.Printf("INFO1 OV ParseDate: dv='%s' parsedText='%s' parsedTime='%s' layout='%s'", dv, parsedText, parsedTime, layout)
+				}
 				break
 			}
 			//log.Printf("Error OV ParseDate: dv='%s' err='%v'", *dv, err)
 		}
 	}
+
 	if err != nil {
-		return 0, fmt.Errorf("Error OV ParseDate: dv='%s'", dv)
+		//reterr := fmt.Errorf("Error OV ParseDate: dv='%s' err='%v'", dv, err)
+		reterr := fmt.Errorf("ParseDate: dverr='%s'", dv)
+		return 0, reterr
 	} else {
 		// Convert the parsed time to Unix epoch timestamp
 		epochTimestamp := parsedTime.Unix()
-		if epochTimestamp > 0 {
+		if epochTimestamp < 0 || epochTimestamp > 0 {
 			unixepoch = epochTimestamp
 			//log.Printf("ParseDate dv='%s' RFC3339='%s'", *dv, parsedTime.Format(time.RFC3339))
 			if debug {
 				log.Printf("ParseDate dv='%s' U: %d", dv, unixepoch)
 			}
 		} else {
-			log.Printf("Error OV ParseDate dv='%s' epochTimestamp=%d < 0", dv, parsedTime.Format(time.RFC3339), epochTimestamp)
+			log.Printf("Error OV ParseDate dv='%s' t='%s'epochTimestamp=%d == 0", dv, parsedTime.Format(time.RFC3339), epochTimestamp)
 		}
 	}
 	return
-}
+} // end func ParseDate
 
 // Function to extract only the portion of the input string that matches the layout
 func extractMatchingText(input string, layout string) string {
@@ -2538,7 +2721,7 @@ func extractMatchingText(input string, layout string) string {
 	if err == nil {
 		return input
 	}
-	for i := 0; i < len(input); i++ {
+	for i := 6; i < len(input); i++ {
 		// Attempt to parse the string with the layout
 		_, err := time.Parse(layout, input[:i])
 		if err != nil {
@@ -2549,8 +2732,69 @@ func extractMatchingText(input string, layout string) string {
 	}
 	// If the loop completes without an error, the entire input is the matching text
 	return input
-}
+} // end func extractMatchingText
 
 func isspace(b byte) bool {
 	return b < 33
+}
+
+func ConnSQL(username string, password string, hostname string, database string) (*sql.DB, error) {
+	params := "?timeout=86400s"
+	// [username[:password]@][protocol[(address)]]/dbname[?param1=value1&...&paramN=valueN]
+	dsn := fmt.Sprintf("%s:%s@%s(%s)/%s%s", username, password, "tcp", hostname, database, params)
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		log.Printf("ERROR overview.ConnSQL 'open' failed err='%v'", err)
+		return nil, err
+	}
+	err = db.Ping()
+	if err != nil {
+		log.Printf("ERROR overview.ConnSQL 'ping' failed err='%v'", err)
+		return nil, err
+	}
+	return db, nil
+} // end func connSQL
+
+func MsgIDhash2mysql(messageidhash string, size int, db *sql.DB) (bool, error) {
+	if len(messageidhash) != 64 || size == 0 {
+		return false, fmt.Errorf("ERROR overview.MsgIDhash2mysql len(messageidhash) != 64 || size=%d", size)
+	}
+	if stmt, err := db.Prepare("INSERT INTO msgidhash (msgidhash, size) VALUES (?,?)"); err != nil {
+		log.Printf("ERROR overview.MsgIDhash2mysql db.Prepare() err='%v'", err)
+		return false, err
+	} else {
+		if res, err := stmt.Exec(messageidhash, size); err != nil {
+			log.Printf("ERROR overview.MsgIDhash2mysql stmt.Exec() err='%v'", err)
+			return false, err
+		} else {
+			if rowCnt, err := res.RowsAffected(); err != nil {
+				log.Printf("ERROR overview.MsgIDhash2mysql res.RowsAffected() err='%v'", err)
+				return false, err
+			} else {
+				if rowCnt == 1 {
+					return true, nil // inserted
+				}
+				return false, nil // duplicate
+			}
+		}
+	}
+	return false, fmt.Errorf("ERROR overview.MsgIDhash2mysql() uncatched return")
+} // end func MsgIDhash2mysql
+
+func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, error) {
+	if len(messageidhash) != 64 {
+		return false, fmt.Errorf("ERROR overview.IsMsgidHashSQL len(messageidhash) != 64")
+	}
+	var msgidhash string
+	if err := db.QueryRow("SELECT msgidhash FROM msgidhash WHERE msgidhash = ? LIMIT 1", messageidhash).Scan(&msgidhash); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		log.Printf("ERROR overview.IsMsgidHashSQL err='%v'", err)
+		return false, err
+	}
+	if msgidhash == messageidhash {
+		return true, nil
+	}
+	return false, fmt.Errorf("ERROR overview.IsMsgidHashSQL() uncatched return")
 }

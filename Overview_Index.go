@@ -2,6 +2,7 @@ package overview
 
 import (
 	"bufio"
+	"database/sql"
 	"fmt"
 	"github.com/go-while/go-utils"
 	"log"
@@ -66,15 +67,15 @@ func WriteOverviewIndex(file string, msgnums []uint64, offsets map[uint64]int64)
 			z = offset
 		}
 	}
-	WriteOverviewIndex_INDEX(OV_Index_File, &IndexLine{a: &a, b: &b, y: &y, z: &z})
+	WriteOverviewIndex_INDEX(OV_Index_File, &IndexLine{a: a, b: b, y: y, z: z})
 	//WriteOverviewIndex_TABLE(&OV_IndexTable, a, b, len(*offsets))
 } // end func NewOverviewIndex
 
 type IndexLine struct {
-	a *uint64 // msgnum a
-	b *uint64 // msgnum b
-	y *int64  // y is offset for a
-	z *int64  // z is offset for b
+	a uint64 // msgnum a
+	b uint64 // msgnum b
+	y int64  // y is offset for a
+	z int64  // z is offset for b
 }
 
 func WriteOverviewIndex_INDEX(file string, data *IndexLine) {
@@ -84,13 +85,15 @@ func WriteOverviewIndex_INDEX(file string, data *IndexLine) {
 		log.Printf("Error WriteOverviewIndex_INDEX fp='%s' err0='%v'", filepath.Base(file), err)
 		return
 	}
-	line := fmt.Sprintf("|%d|%d|%d|%d|", *data.a, *data.b, *data.y, *data.z)
+	line := fmt.Sprintf("|%d|%d|%d|%d|", data.a, data.b, data.y, data.z)
 	//line := fmt.Sprintf("|0x%03x|0x%03x|0x%06x|0x%06x|", *data.a, *data.b, *data.y, *data.z)
 	_, err = fh.WriteString(line + LF)
 	if err != nil {
 		log.Printf("Error WriteOverviewIndex_INDEX fp='%s' err2='%v'", filepath.Base(file), err)
 	}
-	log.Printf("WriteOverviewIndex_INDEX a=%d b=%d y=%d z=%d line='%s'", *data.a, *data.b, *data.y, *data.z, line)
+
+	//log.Printf("WriteOverviewIndex_INDEX a=%d b=%d y=%d z=%d line='%s'", data.a, data.b, data.y, data.z, line)
+
 } // end func WriteOverviewIndex_INDEX
 
 func (ovi *OverviewIndex) ReadOverviewIndex(file string, group string, a uint64, b uint64) int64 {
@@ -122,15 +125,35 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file string, group string, a uint64,
 	fileScanner.Split(bufio.ScanLines)
 	lc := 0
 	log.Printf("ReadOverviewIndex groups='%s' SCAN a=%d", group, a)
-	//var prev_xa uint64
-	var prev_xb uint64
-	//var prev_xy int64
-	var prev_xz int64
+	//var prev_xb uint64
+	//var prev_xz int64
+	/*  todo: get rid of x_a and x_y. only need x_b as floored + x_z offset
+	 * 	|x_a|x_b|x_y|x_z
+		|1|100|128|19736|
+		|101|200|19932|41507|
+		|201|300|41705|75295|
+		|301|400|75566|99228|
+		|401|500|99416|122651|
+		|501|600|122871|146860|
+		...
+		|68801|68900|16551271|16578319|
+		|68901|69000|16578768|16607605|
+		|69001|69100|16608012|16637489|
+		|69101|69200|16637818|16667846|
+		|69201|69279|16668263|16690640|
+		*
+		* // new index format idea:
+		* |100|19736|
+		* |200|41507|
+		* ...
+		* |69200|16667846|
+		* and ommit last one to save a line: |69279|16690640|
+	*/
 	for fileScanner.Scan() {
 		lc++
 		line := fileScanner.Text()
-		if len(line) < 16 {
-			log.Printf("Error ReadOverviewIndex groups='%s' fp='%s' line<16 lc=%d ll=%d", group, filepath.Base(file), lc, len(line))
+		if len(line) < 1 {
+			log.Printf("Error ReadOverviewIndex groups='%s' fp='%s' line<1 lc=%d ll=%d", group, filepath.Base(file), lc, len(line))
 			break
 		}
 		if line[0] != '|' && line[len(line)-1] != '|' {
@@ -174,22 +197,22 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file string, group string, a uint64,
 		if DEBUG_OV {
 			log.Printf("ROVI group='%s' a=%d x_a=%d x_b=%d x_y=%d x_z=%d", group, a, x_a, x_b, x_y, x_y)
 		}
+
+		// memoryleak? always cache index offsets
+		OVIndex.SetOVIndexCacheOffset(group, x_b, x_z)
+
 		if a >= x_a && a <= x_b {
-			//if prev_xa > 0 && prev_xy > 0 {
-			//	OVIndex.SetOVIndexCacheOffset(group, prev_xa, prev_xy)
+			// cache previous index offset
+			//if prev_xb > 0 && prev_xz > 0 {
+			//	OVIndex.SetOVIndexCacheOffset(group, prev_xb, prev_xz)
 			//}
-			if prev_xb > 0 && prev_xz > 0 {
-				OVIndex.SetOVIndexCacheOffset(group, prev_xb, prev_xz)
-			}
-			//OVIndex.SetOVIndexCacheOffset(group, x_a, x_y)
-			OVIndex.SetOVIndexCacheOffset(group, x_b, x_z)
+			// cache only index matches
+			//OVIndex.SetOVIndexCacheOffset(group, x_b, x_z)
 			offset = x_y
 			break
 		}
-		//prev_xa = x_a
-		prev_xb = x_b
-		//prev_xy = x_y
-		prev_xz = x_z
+		//prev_xb = x_b
+		//prev_xz = x_z
 	}
 	return offset
 } // end func ReadOverviewIndex
@@ -197,8 +220,8 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file string, group string, a uint64,
 type OverviewIndex struct {
 	mux            sync.Mutex
 	IndexMap       map[string]map[uint64]int64 // data[group][msgnum]offset
-	IndexCache     []string // rotating list with cached index groups
-	IndexCacheSize int // number of groups we cache an index for
+	IndexCache     []string                    // rotating list with cached index groups
+	IndexCacheSize int                         // number of groups we cache an index for
 }
 
 func (ovi *OverviewIndex) SetOVIndexCacheOffset(group string, fnum uint64, offset int64) {
@@ -303,10 +326,15 @@ func OV_AutoIndex() {
 } // end func OV_Indexer
 
 func ReOrderOverview(file string, group string) bool {
+	if strings.HasSuffix(group, ".test") {
+		return false
+	}
 	debug := false
 	newfile := file + ".new"
 	if utils.FileExists(newfile) {
-		log.Printf("Error ReOrderOverview FileExists newfile='%s'", newfile)
+		if debug {
+			log.Printf("Error ReOrderOverview FileExists newfile='%s'", newfile)
+		}
 		return false
 	}
 	if !utils.FileExists(file) {
@@ -332,8 +360,9 @@ readlines:
 	for i, line := range lines {
 		if line == "" {
 			log.Printf("Error OV ReOrderOverview i=%d line=nil ll=%d", i, ll)
-			break
+			return false
 		}
+
 		if i == 0 {
 			header = line
 			continue
@@ -353,32 +382,40 @@ readlines:
 		datafields := strings.Split(line, "\t")
 		if len(datafields) != OVERVIEW_FIELDS {
 			log.Printf("Error OV ReOrderOverview file='%s' len(datafields)=%d != OVERVIEW_FIELDS=%d i=%d", filepath.Base(file), len(datafields), OVERVIEW_FIELDS, i)
-			break
+			return false
 		}
-		if !isvalidmsgid(datafields[4], true) {
-			if len(datafields[4]) > 0 && (datafields[4][0] == 'X' || datafields[4][0] == 0) { // check if first char is X or NUL
-				// expiration removed article from overview
-				continue
-			}
-			log.Printf("Error OV ReOrderOverview file='%s' lc=%d field[4] err='!isvalidmsgid'", filepath.Base(file), i)
-			break
-		}
+
+		//if !isvalidmsgid(datafields[4], true) {
+		//	//if len(datafields[4]) > 0 && (datafields[4][0] == 'X' || datafields[4][0] == 0) { // check if first char is X or NUL
+		//	//	// expiration removed article from overview
+		//	//	continue
+		//	//}
+		//	log.Printf("Error OV ReOrderOverview file='%s' lc=%d field[4] err='!isvalidmsgid' f4='%s' f8='%s'", filepath.Base(file), i, datafields[4], datafields[8])
+		//	return false
+		//}
+
 		//msgnum := utils.Str2uint64(datafields[0])
+
 		msgid := datafields[4]
 		switch uniq_msgids[msgid] {
 		case true:
-			log.Printf("Ignore Duplicate msgid='%s' file='%s' i=%d", msgid, filepath.Base(file), i)
+			if debug {
+				log.Printf("Ignore Duplicate msgid='%s' file='%s' i=%d", msgid, filepath.Base(file), i)
+			}
 			//time.Sleep(time.Second)
 			continue readlines
 		case false:
 			uniq_msgids[msgid] = true
 		}
+
 		unixepoch, err := ParseDate(datafields[3])
-		if err != nil || unixepoch == 0 {
-			log.Printf("Error OV ReOrderOverview ParseDate file='%s' i=%d err='%v' unixepoch=%d", filepath.Base(file), i, err, unixepoch)
-			return false
+		if err != nil {
+			log.Printf("IGNORE Error OV ReOrderOverview ParseDate file='%s' i=%d err='%v' unixepoch=%d msgid='%s' subj='%s' xref='%s'", filepath.Base(file), i, err, unixepoch, msgid, datafields[1], datafields[8])
+			//return false
+			continue readlines
 		}
 		mapdata[unixepoch] = append(mapdata[unixepoch], line)
+
 		switch uniq_stamps[unixepoch] {
 		case true:
 			continue
@@ -415,7 +452,7 @@ readlines:
 			// first xref has to be nntp, then group:n
 			if len(xrefs) >= 2 && xrefs[0] == "nntp" {
 				// loop over all xrefs we have
-				loop_xrefs:
+			loop_xrefs:
 				for x := 1; x < len(xrefs); x++ {
 
 					axref := xrefs[x]
@@ -459,7 +496,7 @@ readlines:
 			doLimitBytes := false
 			if doLimitBytes {
 				bytes := utils.Str2uint64(datafields[6])
-				var limit_bytes uint64 = 1024*1024
+				var limit_bytes uint64 = 1024 * 1024
 				if bytes > limit_bytes {
 					log.Printf("ReOrderOV IGNORED msgid='%s' bytes=%d", msgid, bytes)
 					continue
@@ -505,7 +542,8 @@ readlines:
 		log.Printf("wrote %d lines to newfh='%s'", len(writeLines), filepath.Base(newfile))
 		who := "ReOrderOV"
 		debug_rescan := false
-		retbool, last := Rescan_Overview(who, newfile, group, 999, debug_rescan)
+		var db *sql.DB = nil
+		retbool, last := Rescan_Overview(who, newfile, group, 999, debug_rescan, db)
 		if retbool {
 			log.Printf("OK ReOrderOV Rescan_Overview newfh='%s' retbool=%t last=%d", filepath.Base(newfile), retbool, last)
 			return true

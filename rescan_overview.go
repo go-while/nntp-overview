@@ -1,6 +1,7 @@
 package overview
 
 import (
+	"database/sql"
 	"fmt"
 	//"github.com/edsrzf/mmap-go"
 	"github.com/go-while/go-utils"
@@ -31,6 +32,7 @@ func Rescan_help() {
 	fmt.Println("   mode: 997 == like mode 3 with quíck rebuild ActiveMap")
 	fmt.Println("   mode: 998 == like mode 0 with deep check and safer but slower rebuild ActiveMap")
 	fmt.Println("   mode: 999 == like mode 4 with try fix-footer!")
+	fmt.Println("   mode: 1000 == only insert messageidhash to mysql")
 	os.Exit(0)
 }
 
@@ -44,7 +46,7 @@ func returndefermmapclose(ovfh *OVFH, cancelchan chan struct{}) {
 }
 
 // Rescan_Overview returns: true|false, last_msgnum
-func Rescan_Overview(who string, file_path string, group string, mode int, DEBUG bool) (bool, uint64) {
+func Rescan_Overview(who string, file_path string, group string, mode int, DEBUG bool, db *sql.DB) (bool, uint64) {
 	// the steps are:
 	// check header
 	// check footer ('check footer' runs before 'check lines' or at the end if footer is broken, use mode=4 setting)
@@ -56,6 +58,7 @@ func Rescan_Overview(who string, file_path string, group string, mode int, DEBUG
 	//time.Sleep(time.Second)
 	var err error
 	var fix_flag string
+	var sql_ins, sql_dup = 0, 0
 	ovfh := &OVFH{}
 	ovfh.File_path = file_path
 
@@ -78,7 +81,6 @@ func Rescan_Overview(who string, file_path string, group string, mode int, DEBUG
 	}
 
 	startindex := OV_RESERVE_BEG
-	//endindex := len_mmap - OV_RESERVE_END
 	endindex := len_mmap - 1
 
 	log.Printf(" --> rescan_OV mode=%d len=%d startindex=%d", mode, len_mmap, startindex)
@@ -339,15 +341,37 @@ rescan_OV:
 				// deep verify scan of fields
 
 				/*
-					Subject         string      1
-					From            string      2
-					Date            string      3
-					Messageid       string      4
-					Bytes           int64       5
-					Lines           int         6
-					References      []string    7
-					Xref            string      8
+					 *	MsgNum          int64       0
+						Subject         string      1
+						From            string      2
+						Date            string      3
+						Messageid       string      4
+						Bytes           int64       5
+						Lines           int         6
+						References      []string    7
+						Xref            string      8
 				*/
+
+				if mode == 1000 {
+					if db == nil {
+						log.Printf("ERROR Rescan_OV mode=1000 db=nil")
+						return false, 0
+					}
+					// hash msgid to mysql
+					messageidhash := utils.Hash256(fields[4])
+					if retbool, sqlerr := MsgIDhash2mysql(messageidhash, utils.Str2int(fields[5]), db); sqlerr != nil {
+						log.Printf("ERROR MsgIDhash2mysql sqlerr='%v'", sqlerr)
+						return false, last_msgnum
+					} else {
+						if retbool {
+							sql_ins++
+						} else {
+							sql_dup++
+						}
+					}
+					continue rescan_OV
+				}
+
 				msgid := fields[4]
 				bytes := utils.Str2int(fields[5])
 				deezlines := utils.Str2int(fields[6])
@@ -360,9 +384,10 @@ rescan_OV:
 				}
 				if uniq_msgids[msgid] > 0 {
 					log.Printf("WARN Rescan_OV#5a @line=%d !uniq_msgid msgnum=%d msgid='%s' firstL=%d", lines, msgnum, msgid, uniq_msgids[msgid])
-					//return false, 0
+					//return false, last_msgnum
+
 				} else {
-					uniq_msgids[msgid] = lines
+					uniq_msgids[msgid] = lines // is uniq at line N
 					list_msgids = append(list_msgids, msgid)
 				}
 
@@ -417,6 +442,15 @@ rescan_OV:
 		position++
 
 	} // end for rescan_OV
+
+	if mode == 1000 {
+		if db != nil {
+			db.Close()
+			db = nil
+		}
+		log.Printf("Rescan_OV mode=1000 msgidhash2mysql returned group='%s' sql_ins=%d sql_dup=%d", group, file_path, sql_ins, sql_dup)
+		return true, last_msgnum
+	}
 
 	var gibb int
 	toend := len_mmap - position
@@ -525,3 +559,22 @@ rescan_OV:
 	log.Printf("ERROR Rescan_OV returned with false badfooter=%t fix_flag='%s'", badfooter, fix_flag)
 	return false, 0
 } // end func Rescan_Overview
+
+func FilterMessageID(messageid string) bool {
+	lmsgid := strings.ToLower(messageid)
+	if strings.HasPrefix(lmsgid, "<part") ||
+		//strings.HasSuffix(lmsgid, "googlegroups.com>") ||
+		strings.HasSuffix(lmsgid, "@nyuu>") ||
+		strings.HasSuffix(lmsgid, "@ngpost>") ||
+		strings.HasSuffix(lmsgid, "@jbinup.local>") ||
+		strings.HasSuffix(lmsgid, "@jbindown.local>") ||
+		strings.HasSuffix(lmsgid, "@powerpost2000aa.local>") ||
+		strings.Contains(lmsgid, "@nyuu") ||
+		strings.Contains(lmsgid, "@powerpost") ||
+		strings.Contains(lmsgid, "@jbinup") ||
+		strings.Contains(lmsgid, "@jbindown") ||
+		strings.Contains(lmsgid, "@ngpost") {
+		return true
+	}
+	return false
+} // end func FilterMessageID
