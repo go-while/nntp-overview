@@ -82,7 +82,7 @@ var (
 	MAX_Open_overviews_chan chan struct{} // locking queue prevents opening of more overview files
 	OV_AUTOINDEX_CHAN       = make(chan *NEWOVI, 1)
 	// The date format layouts to try
-	NNTPDateLayouts = []string{
+	NNTPDateLayoutsExtended = []string{
 
 		"Monday, _2 Jan 2006 15:04:05 -0700",
 		"Monday, _2 Jan 2006 15:04:05 -0700 (MST)",
@@ -278,6 +278,12 @@ var (
 		// Date: Tue, 19 Jun 2007 13:09:02 GMT
 		"Date: Tue, _2 Jun 2006 15:04:05 MST",
 	}
+	NNTPDateLayouts = NNTPDateLayoutsExtended
+	/*
+	NNTPDateLayouts = []string{
+
+	}
+	*/
 )
 
 type Overview_Open_Request struct {
@@ -1214,9 +1220,19 @@ func IsValidGroupName(group string) bool {
 			//log.Printf("!IsValidGroupName !IsLetter !IsDigit i=%d group='%s'", i, group)
 			return false
 		}
+	} // end for
+
+	if len(group) > 127 {
+		log.Printf("!IsValidGroupName group='%s' len=%d", group, len(group))
+		return false
 	}
 
 	if len(group) > 1 {
+
+		if group[len(group)-1] == '.' { // last cant be dot
+			return false
+		}
+
 	loop_check_chars:
 		for i, r := range group[1:] { // check chars without first char, we checked it before
 			valid := false
@@ -2682,6 +2698,7 @@ func ParseDate(dv string) (unixepoch int64, err error) {
 		if debug {
 			log.Printf("WARN1 OV ParseDate: dv='%s' try extractMatchingText", dv)
 		}
+		/*
 		for _, layout := range NNTPDateLayouts {
 			parsedText := extractMatchingText(dv, layout)
 			parsedTime, err = time.Parse(layout, parsedText)
@@ -2693,6 +2710,7 @@ func ParseDate(dv string) (unixepoch int64, err error) {
 			}
 			//log.Printf("Error OV ParseDate: dv='%s' err='%v'", *dv, err)
 		}
+		*/
 	}
 
 	if err != nil {
@@ -2759,7 +2777,7 @@ func MsgIDhash2mysql(messageidhash string, size int, db *sql.DB) (bool, error) {
 	if len(messageidhash) != 64 || size == 0 {
 		return false, fmt.Errorf("ERROR overview.MsgIDhash2mysql len(messageidhash) != 64 || size=%d", size)
 	}
-	if stmt, err := db.Prepare("INSERT INTO msgidhash (msgidhash, size) VALUES (?,?)"); err != nil {
+	if stmt, err := db.Prepare("INSERT INTO msgidhash (hash, fsize) VALUES (?,?)"); err != nil {
 		log.Printf("ERROR overview.MsgIDhash2mysql db.Prepare() err='%v'", err)
 		return false, err
 	} else {
@@ -2781,20 +2799,45 @@ func MsgIDhash2mysql(messageidhash string, size int, db *sql.DB) (bool, error) {
 	return false, fmt.Errorf("ERROR overview.MsgIDhash2mysql() uncatched return")
 } // end func MsgIDhash2mysql
 
-func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, error) {
+func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, error) {
+
 	if len(messageidhash) != 64 {
-		return false, fmt.Errorf("ERROR overview.IsMsgidHashSQL len(messageidhash) != 64")
+		return false, false, fmt.Errorf("ERROR overview.IsMsgidHashSQL len(messageidhash) != 64")
 	}
-	var msgidhash string
-	if err := db.QueryRow("SELECT msgidhash FROM msgidhash WHERE msgidhash = ? LIMIT 1", messageidhash).Scan(&msgidhash); err != nil {
+	var hash string
+	var stat string
+	if err := db.QueryRow("SELECT hash,stat FROM msgidhash WHERE hash = ? LIMIT 1", messageidhash).Scan(&hash,&stat); err != nil {
 		if err == sql.ErrNoRows {
-			return false, nil
+			return false, false, nil
 		}
 		log.Printf("ERROR overview.IsMsgidHashSQL err='%v'", err)
-		return false, err
+		return false, false, err
 	}
-	if msgidhash == messageidhash {
-		return true, nil
+	if hash == messageidhash {
+		var drop bool
+		if len(stat) == 1 {
+			drop = true
+		}
+		/*
+		switch stat {
+			case "c":
+				// cancelled
+				drop = true
+			case "d":
+				// dmca
+				drop = true
+			case "f":
+				// filtered
+				drop = true
+			case "n":
+				// nocem
+				drop = true
+			case "r":
+				// removed
+				drop = true
+		}
+		*/
+		return true, drop, nil
 	}
-	return false, fmt.Errorf("ERROR overview.IsMsgidHashSQL() uncatched return")
-}
+	return false, false, fmt.Errorf("ERROR overview.IsMsgidHashSQL() uncatched return")
+} // end func IsMsgidHashSQL
