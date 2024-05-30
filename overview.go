@@ -340,6 +340,7 @@ type OVL struct {
 	Lines          int
 	Xref           string
 	Newsgroups     []string
+	Grouphashs     map[string]string // key group, val hash
 	Checksum       int // has to match OVL_CHECKSUM
 	Retchan        chan []*ReturnChannelData
 	ReaderCachedir string
@@ -595,7 +596,10 @@ func (ov *OV) di_ov(who string, ovl OVL) []*ReturnChannelData {
 
 	for _, newsgroup := range ovl.Newsgroups {
 
-		hash := strings.ToLower(utils.Hash256(newsgroup))
+		hash := ovl.Grouphashs[newsgroup]
+		if hash == "" {
+			hash = utils.Hash256(newsgroup)
+		}
 
 		if ov.more_parallel { // constantly spawning of new go routines eats memory
 
@@ -2820,11 +2824,14 @@ func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, error) {
 		}
 		/*
 		switch stat {
+			case "a":
+				// abuse dmca / ntd
+				drop = true
 			case "c":
-				// cancelled
+				// cancel
 				drop = true
 			case "d":
-				// dmca
+				// to delete
 				drop = true
 			case "f":
 				// filtered
