@@ -15,6 +15,7 @@ import (
 	"strings"
 	//"sync"
 	"database/sql"
+	_ "github.com/go-sql-driver/mysql"
 	"time"
 	"unicode"
 )
@@ -2130,7 +2131,6 @@ func check_ovfh_footer(who string, footer string) bool {
 } // end func check_ovfh_footer
 
 func init_file(who string, File_path string, data string, grow bool) (int, error) {
-	DEBUG_OV1 := true
 	if DEBUG_OV {
 		log.Printf("%s init_file fp='%s' len_data=%d grow=%t", who, File_path, len(data), grow)
 	}
@@ -2142,7 +2142,7 @@ func init_file(who string, File_path string, data string, grow bool) (int, error
 		w := bufio.NewWriter(fh)
 		if wb, err = w.WriteString(data); err == nil {
 			if err = w.Flush(); err == nil {
-				if DEBUG_OV1 {
+				if DEBUG_OV {
 					log.Printf("%s init_file wrote fp='%s' len_data=%d wb=%d grow=%t", who, File_path, len(data), wb, grow)
 				}
 				return wb, nil
@@ -2534,6 +2534,7 @@ func sendlineOV(line string, conn net.Conn, txb *int) error {
 		if txb != nil {
 			*txb += tx
 		}
+		conn.SetReadDeadline(time.Now().Add(333 * time.Second))
 	}
 	return nil
 } // end func sendline
@@ -2596,19 +2597,24 @@ func ParseHeaderKeys(head *[]string, laxmid bool) (headermap map[string][]string
 		keysorder = append(keysorder, key)
 	}
 	msgid_key := ""
+
 	for key, values := range headermap {
 		if strings.ToLower(key) == "message-id" {
-			msgid = strings.Join(values, "")
-			msgid_key = key
-			if msgid != "" {
-				msgid, err = GetMessageID(msgid, laxmid)
-				if err != nil || msgid == "" {
-					return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys getMessageID key='%s' val='%v'", key, values)
+			if len(values) > 0 {
+				msgid = values[0]
+				msgid_key = key
+				//msgid = strings.Join(values, "")
+				if msgid != "" {
+					msgid, err = GetMessageID(msgid, laxmid)
+					if err != nil || msgid == "" {
+						return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys getMessageID key='%s' val='%v'", key, values)
+					}
+					break
 				}
-				break
 			}
 		}
 	}
+
 	if msgid != "" && len(headermap[msgid_key]) > 1 {
 		headermap[msgid_key] = nil
 		headermap[msgid_key] = append(headermap[msgid_key], msgid)
@@ -2779,7 +2785,7 @@ func ConnSQL(username string, password string, hostname string, database string)
 
 func MsgIDhash2mysql(messageidhash string, size int, db *sql.DB) (bool, error) {
 	if len(messageidhash) != 64 || size == 0 {
-		return false, fmt.Errorf("ERROR overview.MsgIDhash2mysql len(messageidhash) != 64 || size=%d", size)
+		return false, fmt.Errorf("ERROR overview.MsgIDhash2mysql len(messageidhash)=%d != 64 || size=%d", len(messageidhash), size)
 	}
 	if stmt, err := db.Prepare("INSERT INTO msgidhash (hash, fsize) VALUES (?,?)"); err != nil {
 		log.Printf("ERROR overview.MsgIDhash2mysql db.Prepare() err='%v'", err)
@@ -2825,7 +2831,10 @@ func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, error) {
 		/*
 		switch stat {
 			case "a":
-				// abuse dmca / ntd
+				// abuse takedown
+				drop = true
+			case "b":
+				// banned
 				drop = true
 			case "c":
 				// cancel
@@ -2833,8 +2842,14 @@ func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, error) {
 			case "d":
 				// to delete
 				drop = true
+			case "e":
+				// expired
+				drop = true
 			case "f":
 				// filtered
+				drop = true
+			case "g":
+				// group removed
 				drop = true
 			case "n":
 				// nocem
