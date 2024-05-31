@@ -340,26 +340,34 @@ rescan_OV:
 			if tabs == OVERVIEW_TABS && mode >= 998 {
 				// deep verify scan of fields
 
-				/*
-					 *	MsgNum          int64       0
-						Subject         string      1
-						From            string      2
-						Date            string      3
-						Messageid       string      4
-						Bytes           int64       5
-						Lines           int         6
-						References      []string    7
-						Xref            string      8
+				/*	ovl.MsgNum       int64       0
+				 *	ovl.Subject      string      1
+				 *	ovl.From         string      2
+				 *	ovl.Date         string      3
+				 *	ovl.Messageid    string      4
+				 *	references       []string    5
+				 *	ovl.Bytes        int         6
+				 *	ovl.Lines        int         7
+				 *	ovl.Xref         string      8
 				*/
 
 				if mode == 1000 {
 					if db == nil {
-						log.Printf("ERROR Rescan_OV mode=1000 db=nil")
+						log.Printf("ERROR Rescan_OV mode=1000 mysql_db=nil")
 						return false, 0
 					}
 					// hash msgid to mysql
 					messageidhash := utils.Hash256(fields[4])
-					if retbool, sqlerr := MsgIDhash2mysql(messageidhash, utils.Str2int(fields[5]), db); sqlerr != nil {
+					//size := utils.Str2int(fields[6])
+					size := 0
+					if size == 0 {
+						log.Printf("ERROR MsgIDhash2mysql size=0 msgid='%s' hash='%s' msgnum=%s f6=%s fields=%d", fields[4], messageidhash, fields[0], fields[6], len(fields))
+						for i, field := range fields {
+							log.Printf("field %d = '%s'", i, field)
+						}
+						return false, 0
+					}
+					if retbool, sqlerr := MsgIDhash2mysql(messageidhash, size, db); sqlerr != nil {
 						log.Printf("ERROR MsgIDhash2mysql sqlerr='%v'", sqlerr)
 						return false, last_msgnum
 					} else {
@@ -373,8 +381,9 @@ rescan_OV:
 				}
 
 				msgid := fields[4]
-				bytes := utils.Str2int(fields[5])
-				deezlines := utils.Str2int(fields[6])
+				//references := fields[5]
+				bytes := utils.Str2int(fields[6])
+				deezlines := utils.Str2int(fields[7])
 				full_xref_str := fields[8]
 
 				// start verify fields
@@ -391,7 +400,7 @@ rescan_OV:
 					list_msgids = append(list_msgids, msgid)
 				}
 
-				if bytes <= 0 && deezlines <= 0 {
+				if bytes <= 0 || deezlines <= 0 {
 					log.Printf("ERROR Rescan_OV#6 @line=%d msgnum=%d bytes=%d lines=%d", lines, msgnum, bytes, deezlines)
 					return false, 0
 				}
