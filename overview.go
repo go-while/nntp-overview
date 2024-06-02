@@ -2783,6 +2783,10 @@ func ConnSQL(username string, password string, hostname string, database string)
 	return db, nil
 } // end func connSQL
 
+func ShortMsgIDhash2mysql(shorthash string, offset int, db *sql.DB) (bool, error) {
+	return false, nil
+} // end func ShortMsgIDhash2mysql
+
 func MsgIDhash2mysql(messageidhash string, size int, db *sql.DB) (bool, error) {
 	if len(messageidhash) != 64 || size == 0 {
 		return false, fmt.Errorf("ERROR overview.MsgIDhash2mysql len(messageidhash)=%d != 64 || size=%d", len(messageidhash), size)
@@ -2792,7 +2796,7 @@ func MsgIDhash2mysql(messageidhash string, size int, db *sql.DB) (bool, error) {
 		return false, err
 	} else {
 		if res, err := stmt.Exec(messageidhash, size); err != nil {
-			log.Printf("ERROR overview.MsgIDhash2mysql stmt.Exec() err='%v'", err)
+			//log.Printf("ERROR overview.MsgIDhash2mysql stmt.Exec() err='%v'", err)
 			return false, err
 		} else {
 			if rowCnt, err := res.RowsAffected(); err != nil {
