@@ -543,7 +543,7 @@ func notify_workers_done_chan(ov_wid int) {
 func (ov *OV) overview_Worker(ov_wid int) {
 	who := fmt.Sprintf("OVW:%d", ov_wid)
 	did, max := 0, 10000
-	//log.Printf("%s Alive", who)
+	//log.Printf("who='%s' Alive", who)
 
 	stop := false
 forever:
@@ -560,7 +560,7 @@ forever:
 				break forever
 			}
 			if DEBUG_OV {
-				log.Printf("%s overview_Worker %d) got ovl msgid='%s'", who, ov_wid, ovl.Messageid)
+				log.Printf("who='%s' overview_Worker %d) got ovl msgid='%s'", who, ov_wid, ovl.Messageid)
 			}
 			// handle incoming overview line
 			ovl.Retchan <- ov.di_ov(who, ovl) // passes overview from divide_incoming_overview directly into the Retchan
@@ -674,10 +674,10 @@ func (ov *OV) di_ov(who string, ovl OVL) []*ReturnChannelData {
 
 	if dones == len(ovl.Newsgroups) {
 		if DEBUG_OV {
-			log.Printf("%s di_ov dones=%d len_ovl.Newsgroups=%d retchans=%d retlist=%d", who, dones, len(ovl.Newsgroups), len(retchans), len(retlist))
+			log.Printf("who='%s' di_ov dones=%d len_ovl.Newsgroups=%d retchans=%d retlist=%d", who, dones, len(ovl.Newsgroups), len(retchans), len(retlist))
 		}
 	} else {
-		log.Printf("%s ERROR di_ov dones=%d len_ovl.Newsgroups=%d retchans=%d retlist=%d", who, dones, len(ovl.Newsgroups), len(retchans), len(retlist))
+		log.Printf("who='%s' ERROR di_ov dones=%d len_ovl.Newsgroups=%d retchans=%d retlist=%d", who, dones, len(ovl.Newsgroups), len(retchans), len(retlist))
 	}
 	return retlist
 } // end func divide_incoming_overview
@@ -722,16 +722,16 @@ func (ov *OV) GO_pi_ov(who string, overviewline string, newsgroup string, hash s
 
 	ovfh, err := Open_ov(who, mmap_file_path)
 	if err != nil || ovfh == nil {
-		log.Printf("%s ERROR overview.Open_ov ovfh='%v 'err='%v'", who, ovfh, err)
+		log.Printf("who='%s' ERROR overview.Open_ov ovfh='%v 'err='%v'", who, ovfh, err)
 		return fail_retchan(retchan)
 
 	}
 	if ovfh.Mmap_handle == nil {
-		log.Printf("%s ERROR GO_pi_ov ovfh.Mmap_handle=nil", who)
+		log.Printf("who='%s' ERROR GO_pi_ov ovfh.Mmap_handle=nil", who)
 		return fail_retchan(retchan)
 	}
 	if DEBUG_OV {
-		log.Printf("%s overview.Open_ov ng='%s' OK", who, newsgroup)
+		log.Printf("who='%s' overview.Open_ov ng='%s' OK", who, newsgroup)
 	}
 
 	if ovfh.Last == 0 {
@@ -742,7 +742,7 @@ func (ov *OV) GO_pi_ov(who string, overviewline string, newsgroup string, hash s
 	ovl_line := fmt.Sprintf("%d\t%s\t%s\n", ovfh.Last, overviewline, xref)
 	new_ovfh, err, errstr := Write_ov(who, ovfh, ovl_line, false, false, false, false)
 	if err != nil {
-		log.Printf("%s ERROR GO_pi_ovWrite_ovfh err='%v' errstr='%s'", who, err, errstr)
+		log.Printf("who='%s' ERROR GO_pi_ovWrite_ovfh err='%v' errstr='%s'", who, err, errstr)
 		return fail_retchan(retchan)
 
 	} else {
@@ -750,16 +750,16 @@ func (ov *OV) GO_pi_ov(who string, overviewline string, newsgroup string, hash s
 			ovfh = new_ovfh
 		}
 		if DEBUG_OV {
-			log.Printf("%s GO_pi_ov OK ng='%s' ovfh.Findex=%d ovfh.Last=%d", who, newsgroup, ovfh.Findex, ovfh.Last)
+			log.Printf("who='%s' GO_pi_ov OK ng='%s' ovfh.Findex=%d ovfh.Last=%d", who, newsgroup, ovfh.Findex, ovfh.Last)
 		}
 
 		if _, err := Update_Footer(who, ovfh, "GO_pi_ov"); err != nil {
-			log.Printf("%s ERROR overview.Update_Footer ng='%s' err='%v'", who, newsgroup, err)
+			log.Printf("who='%s' ERROR overview.Update_Footer ng='%s' err='%v'", who, newsgroup, err)
 			return fail_retchan(retchan)
 
 		} else {
 			if DEBUG_OV {
-				log.Printf("%s overview.Update_Footer OK ng='%s' ovfh.Findex=%d ovfh.Last=%d", who, newsgroup, ovfh.Findex, ovfh.Last)
+				log.Printf("who='%s' overview.Update_Footer OK ng='%s' ovfh.Findex=%d ovfh.Last=%d", who, newsgroup, ovfh.Findex, ovfh.Last)
 			}
 		}
 	}
@@ -767,10 +767,10 @@ func (ov *OV) GO_pi_ov(who string, overviewline string, newsgroup string, hash s
 
 	// finally close the mmap
 	if DEBUG_OV {
-		log.Printf("%s p_i_o: Closing fp='%s'", who, ovfh.File_path)
+		log.Printf("who='%s' p_i_o: Closing fp='%s'", who, ovfh.File_path)
 	}
 	if err := Close_ov(who, ovfh, true, false); err != nil {
-		log.Printf("%s p_i_o: ERROR FINAL Close_ovfh err='%v'", who, err)
+		log.Printf("who='%s' p_i_o: ERROR FINAL Close_ovfh err='%v'", who, err)
 		return fail_retchan(retchan)
 	}
 	last_msgnum := ovfh.Last - 1
@@ -1293,17 +1293,17 @@ func Test_Overview(who string, file_path string, DEBUG bool) bool {
 	update_footer := false
 	/*hash, err := get_hash_from_filename(file_path)
 	if err != nil {
-		log.Printf("%s ERROR Test_Overview get_hash_from_filename='%s' err='%v'", file_path, err)
+		log.Printf("who='%s' ERROR Test_Overview get_hash_from_filename='%s' err='%v'", file_path, err)
 		return false
 	}*/
 	if ovfh, err := Open_ov(who, file_path); err != nil {
 		//if ovfh, err := handle_open_ov(who, hash, file_path); err != nil {
-		log.Printf("%s ERROR OV TEST_Overview Open_ov err='%v' fp='%s'", who, err, filepath.Base(file_path))
+		log.Printf("who='%s' ERROR OV TEST_Overview Open_ov err='%v' fp='%s'", who, err, filepath.Base(file_path))
 		return false
 
 	} else {
 		if err := Close_ov(who, ovfh, update_footer, true); err != nil {
-			log.Printf("%s ERROR OV TEST_Overview Close_ov err='%v' fp='%s'", who, err, filepath.Base(file_path))
+			log.Printf("who='%s' ERROR OV TEST_Overview Close_ov err='%v' fp='%s'", who, err, filepath.Base(file_path))
 			return false
 		}
 	}
@@ -1345,30 +1345,30 @@ func Open_ov(who string, file_path string) (*OVFH, error) {
 
 	// pass open_request to open_request_chan
 	if DEBUG_OV {
-		log.Printf("%s SENDING Open_ov open_request to open_request_chan fp='%s'", who, filepath.Base(file_path))
+		log.Printf("who='%s' SENDING Open_ov open_request to open_request_chan fp='%s'", who, filepath.Base(file_path))
 	}
 	open_request_chan <- open_request
 
 	// wait for reply
 	if DEBUG_OV {
-		log.Printf("%s WAITING Open_ov -> reply_chan fp='%s'", who, filepath.Base(file_path))
+		log.Printf("who='%s' WAITING Open_ov -> reply_chan fp='%s'", who, filepath.Base(file_path))
 	}
 	reply := <-reply_chan
 	// got reply
 	if DEBUG_OV {
-		log.Printf("%s GOT REPLY Open_ov -> reply_chan fp='%s'", who, filepath.Base(file_path))
+		log.Printf("who='%s' GOT REPLY Open_ov -> reply_chan fp='%s'", who, filepath.Base(file_path))
 	}
 
 	if reply.err == nil {
 
 		if DEBUG_OV {
-			log.Printf("%s OK REPLY Open_ov -> fp='%s'", who, filepath.Base(file_path))
+			log.Printf("who='%s' OK REPLY Open_ov -> fp='%s'", who, filepath.Base(file_path))
 		}
 		return reply.ovfh, nil
 
 	} else {
 		err = reply.err
-		log.Printf("%s ERROR REPLY Open_ov -> reply_chan err='%v' fp='%s'", who, err, filepath.Base(file_path))
+		log.Printf("who='%s' ERROR REPLY Open_ov -> reply_chan err='%v' fp='%s'", who, err, filepath.Base(file_path))
 	}
 
 	return nil, fmt.Errorf("%s ERROR Open_ov final err='%v' fp='%s'", who, err, filepath.Base(file_path))
@@ -1384,7 +1384,7 @@ func handle_open_ov(who string, hash string, file_path string) (*OVFH, error) {
 	/*
 		file_path_new := file_path + ".new"
 		if utils.FileExists(file_path_new) {
-			log.Printf("%s INFO handle_open_ov fp='%s.new'", who, file_path)
+			log.Printf("who='%s' INFO handle_open_ov fp='%s.new'", who, file_path)
 			file_path = file_path_new
 		} else
 	*/
@@ -1393,13 +1393,13 @@ func handle_open_ov(who string, hash string, file_path string) (*OVFH, error) {
 	}
 
 	if file_handle, err = os.OpenFile(file_path, os.O_RDWR, 0644); err != nil {
-		log.Printf("%s ERROR handle_open_ov -> mmap.Map err='%v' cs=%d fp='%s'", who, err, cs, file_path)
+		log.Printf("who='%s' ERROR handle_open_ov -> mmap.Map err='%v' cs=%d fp='%s'", who, err, cs, file_path)
 		return nil, err
 	}
 	cs++ // 1
 
 	if mmap_handle, err = mmap.Map(file_handle, mmap.RDWR, 0); err != nil || mmap_handle == nil {
-		log.Printf("%s ERROR handle_open_ov -> Read_Head_ov err='%v' mmap_handle='%v' cs=%d fp='%s'", who, err, mmap_handle, cs, file_path)
+		log.Printf("who='%s' ERROR handle_open_ov -> Read_Head_ov err='%v' mmap_handle='%v' cs=%d fp='%s'", who, err, mmap_handle, cs, file_path)
 		return nil, err
 	}
 	cs++ // 2
@@ -1407,7 +1407,7 @@ func handle_open_ov(who string, hash string, file_path string) (*OVFH, error) {
 	time_open, time_flush, written := utils.Now(), utils.Now(), 0
 
 	if DEBUG_OV {
-		log.Printf("%s handle_open_ov new OVFH fp='%s'", who, file_path)
+		log.Printf("who='%s' handle_open_ov new OVFH fp='%s'", who, file_path)
 	}
 	ovfh := &OVFH{} // { file_path, file_handle, mmap_handle, mmap_size, time_open, time_flush, written, 0, 0 }
 	ovfh.File_path = file_path
@@ -1421,20 +1421,20 @@ func handle_open_ov(who string, hash string, file_path string) (*OVFH, error) {
 	ovfh.Hash = hash
 
 	if _, err := Read_Head_ov(who, ovfh); err != nil { // _ = ov_header
-		log.Printf("%s ERROR handle_open_ov -> Read_Head_ov err='%v' cs=%d fp='%s'", who, err, cs, file_path)
+		log.Printf("who='%s' ERROR handle_open_ov -> Read_Head_ov err='%v' cs=%d fp='%s'", who, err, cs, file_path)
 		return nil, err
 	}
 	cs++ // 3
 
 	if ov_footer, err = Read_Foot_ov(who, ovfh); err != nil {
-		log.Printf("%s ERROR handle_open_ov -> Read_Foot_ov err='%v' cs=%d fp='%s'", who, err, cs, file_path)
+		log.Printf("who='%s' ERROR handle_open_ov -> Read_Foot_ov err='%v' cs=%d fp='%s'", who, err, cs, file_path)
 		return nil, err
 	}
 	cs++ // 4
 
 	foot := strings.Split(ov_footer, ",")
 	if len(foot) != SIZEOF_FOOT {
-		log.Printf("%s ERROR Open_ov -> len(foot)=%d != SIZEOF_FOOT=%d fp='%s'", len(foot), SIZEOF_FOOT, file_path)
+		log.Printf("who='%s' ERROR Open_ov -> len(foot)=%d != SIZEOF_FOOT=%d fp='%s'", len(foot), SIZEOF_FOOT, file_path)
 		return nil, fmt.Errorf("ERROR handle_open_ov cs=%d fp='%s'", who, cs, file_path)
 	}
 	cs++ // 5
@@ -1443,7 +1443,7 @@ func handle_open_ov(who string, hash string, file_path string) (*OVFH, error) {
 		!strings.HasPrefix(foot[2], "Findex=") ||
 		!strings.HasPrefix(foot[3], "bodyend=") ||
 		!strings.HasPrefix(foot[4], "fend=") {
-		log.Printf("%s ERROR Open_ov -> error !HasPrefix foot fp='%s'", who, file_path)
+		log.Printf("who='%s' ERROR Open_ov -> error !HasPrefix foot fp='%s'", who, file_path)
 		return nil, fmt.Errorf("%s ERROR handle_open_ov cs=%d fp='%s'", who, cs, file_path)
 	}
 	cs++ // 6
@@ -1451,13 +1451,13 @@ func handle_open_ov(who string, hash string, file_path string) (*OVFH, error) {
 	last, findex := utils.Str2uint64(strings.Split(foot[1], "=")[1]), utils.Str2int(strings.Split(foot[2], "=")[1])
 	bodyend, fend := utils.Str2int(strings.Split(foot[3], "=")[1]), utils.Str2int(strings.Split(foot[4], "=")[1])
 	if findex >= bodyend && bodyend != fend-OV_RESERVE_END {
-		log.Printf("%s ERROR Open_ov -> findex=%d > bodyend=%d ? fend=%d fp='%s'", who, findex, bodyend, fend, file_path)
+		log.Printf("who='%s' ERROR Open_ov -> findex=%d > bodyend=%d ? fend=%d fp='%s'", who, findex, bodyend, fend, file_path)
 		return nil, fmt.Errorf("%s ERROR handle_open_ov cs=%d fp='%s'", who, cs, file_path)
 	}
 	cs++ // 7
 
 	if findex < OV_RESERVE_BEG || findex > OV_RESERVE_BEG && last == 0 {
-		log.Printf("%s ERROR Open_ov -> findex=%d OV_RESERVE_BEG=%d last=%d fp='%s'", who, findex, OV_RESERVE_BEG, last, file_path)
+		log.Printf("who='%s' ERROR Open_ov -> findex=%d OV_RESERVE_BEG=%d last=%d fp='%s'", who, findex, OV_RESERVE_BEG, last, file_path)
 		return nil, fmt.Errorf("%s ERROR handle_open_ov cs=%d fp='%s'", who, cs, file_path)
 	}
 	cs++ // 8
@@ -1466,14 +1466,14 @@ func handle_open_ov(who string, hash string, file_path string) (*OVFH, error) {
 	ovfh.Last = last
 	if Replay_Footer(who, ovfh) {
 		if DEBUG_OV {
-			log.Printf("%s handle_open_ov -> Replay_Footer OK fp='%s'", who, file_path)
+			log.Printf("who='%s' handle_open_ov -> Replay_Footer OK fp='%s'", who, file_path)
 		}
 		return ovfh, nil
 	} else {
-		log.Printf("%s ERROR handle_open_ov -> !Replay_Footer fp='%s'", who, file_path)
+		log.Printf("who='%s' ERROR handle_open_ov -> !Replay_Footer fp='%s'", who, file_path)
 
 	}
-	log.Printf("%s handle_open_ov !OK fp='%s'", who, file_path)
+	log.Printf("who='%s' handle_open_ov !OK fp='%s'", who, file_path)
 	return nil, fmt.Errorf("%s ERROR handle_open_ov cs=%d fp='%s' final", who, cs, file_path)
 } // end func handle_open_ov
 
@@ -1494,20 +1494,20 @@ func Close_ov(who string, ovfh *OVFH, update_footer bool, force_close bool) erro
 	close_request_chan <- close_request
 	// wait for reply
 	if DEBUG_OV {
-		log.Printf("%s WAITING Close_ov -> reply_chan fp='%s'", who, file)
+		log.Printf("who='%s' WAITING Close_ov -> reply_chan fp='%s'", who, file)
 	}
 	reply := <-reply_chan
 	// got reply
 	if DEBUG_OV {
-		log.Printf("%s GOT REPLY Close_ov -> reply_chan fp='%s'", who, file)
+		log.Printf("who='%s' GOT REPLY Close_ov -> reply_chan fp='%s'", who, file)
 	}
 	if reply.err == nil {
 		if DEBUG_OV {
-			log.Printf("%s OK REPLY Close_ov -> fp='%s'", who, file)
+			log.Printf("who='%s' OK REPLY Close_ov -> fp='%s'", who, file)
 		}
 	} else {
 		err = reply.err
-		log.Printf("%s ERROR REPLY Close_ov -> reply_chan err='%v' fp='%s'", who, err, file)
+		log.Printf("who='%s' ERROR REPLY Close_ov -> reply_chan err='%v' fp='%s'", who, err, file)
 	}
 
 	return err
@@ -1517,7 +1517,7 @@ func handle_close_ov(who string, ovfh *OVFH, update_footer bool, force_close boo
 	var err error
 	if update_footer {
 		if DEBUG_OV {
-			log.Printf("%s handle_close_ov update_footer=%t grow=%t fp='%s'", who, update_footer, grow, ovfh.File_path)
+			log.Printf("who='%s' handle_close_ov update_footer=%t grow=%t fp='%s'", who, update_footer, grow, ovfh.File_path)
 		}
 		if _, err := Update_Footer(who, ovfh, "handle_close_ov"); err != nil {
 			return err
@@ -1535,10 +1535,10 @@ func handle_close_ov(who string, ovfh *OVFH, update_footer bool, force_close boo
 		return err
 	}
 	if DEBUG_OV {
-		log.Printf("%s handle_close_ov update_footer=%t grow=%t OK fp='%s'", who, update_footer, grow, ovfh.File_path)
+		log.Printf("who='%s' handle_close_ov update_footer=%t grow=%t OK fp='%s'", who, update_footer, grow, ovfh.File_path)
 	}
 	if err != nil {
-		log.Printf("%s ERROR handle_close_ov fp='%s' err='%v'", who, ovfh.File_path, err)
+		log.Printf("who='%s' ERROR handle_close_ov fp='%s' err='%v'", who, ovfh.File_path, err)
 	}
 	return err
 } // end func handle_close_ov
@@ -1546,10 +1546,10 @@ func handle_close_ov(who string, ovfh *OVFH, update_footer bool, force_close boo
 func Flush_ov(who string, ovfh *OVFH) error {
 	var err error
 	if err = ovfh.Mmap_handle.Flush(); err != nil {
-		log.Printf("%s ERROR Flush_ov fp='%s' err='%v'", who, ovfh.File_path, err)
+		log.Printf("who='%s' ERROR Flush_ov fp='%s' err='%v'", who, ovfh.File_path, err)
 	} else {
 		if DEBUG_OV {
-			log.Printf("%s Flush_ov OK fp='%s'", who, ovfh.File_path)
+			log.Printf("who='%s' Flush_ov OK fp='%s'", who, ovfh.File_path)
 		}
 	}
 	return err
@@ -1559,7 +1559,7 @@ func Replay_Footer(who string, ovfh *OVFH) bool {
 
 	if ovfh.Last == 0 && ovfh.Findex == OV_RESERVE_BEG {
 		if DEBUG_OV {
-			log.Printf("%s Replay_Footer NEW OK ovfh.Findex=%d", who, ovfh.Findex)
+			log.Printf("who='%s' Replay_Footer NEW OK ovfh.Findex=%d", who, ovfh.Findex)
 		}
 		return true
 	}
@@ -1572,26 +1572,30 @@ replay:
 	for {
 		c := ovfh.Mmap_handle[startindex] // check char at index
 		if DEBUG_OV {
-			//log.Printf("%s DEBUG REPLAY: c='%x' startindex=%d", who, c, startindex)
+			//log.Printf("who='%s' DEBUG REPLAY: c='%x' startindex=%d", who, c, startindex)
 		}
 
 		switch c {
+			/*
+		case '\x07':
+			// hit placed bell sign. try to fix broken footer
+			*/
 		case 0:
 			// char is a <nul> and has to be at 1st position
 			if position == 1 {
 				//trues++
 			} else {
-				log.Printf("%s ERROR OV c=nul position=%d startindex=%d endindex=%d Findex=%d fp='%s'", who, position, startindex, endindex, ovfh.Findex, ovfh.File_path)
+				log.Printf("who='%s' ERROR OV c=nul position=%d startindex=%d endindex=%d Findex=%d fp='%s'", who, position, startindex, endindex, ovfh.Findex, ovfh.File_path)
 			}
 			frees++ // should only be 1 free byte, always
 			if frees > 1 {
-				log.Printf("%s ERROR OV frees=%d > 1 position=%d startindex=%d endindex=%d Findex=%d fp='%s'", who, frees, position, startindex, endindex, ovfh.Findex, ovfh.File_path)
+				log.Printf("who='%s' ERROR OV frees=%d > 1 position=%d startindex=%d endindex=%d Findex=%d fp='%s'", who, frees, position, startindex, endindex, ovfh.Findex, ovfh.File_path)
 			}
 		case '\t':
 			// char is a <tab>
 			tabs++
 			if tabs > OVERVIEW_TABS {
-				log.Printf("%s ERROR OV tabs=%d > %d position=%d startindex=%d fp='%s'", who, tabs, OVERVIEW_TABS, position, startindex, ovfh.File_path)
+				log.Printf("who='%s' ERROR OV tabs=%d > %d position=%d startindex=%d fp='%s'", who, tabs, OVERVIEW_TABS, position, startindex, ovfh.File_path)
 			}
 		case '\n':
 			// char is a <newline>
@@ -1606,7 +1610,7 @@ replay:
 					trues++
 				} else {
 					space := position - frees
-					log.Printf("%s ERROR OV 1st newline position=%d != 2 space=%d fp='%s'", who, position, space, ovfh.File_path)
+					log.Printf("who='%s' ERROR OV 1st newline position=%d != 2 space=%d fp='%s'", who, position, space, ovfh.File_path)
 				}
 				endindex = startindex
 			case 2:
@@ -1619,14 +1623,14 @@ replay:
 		} // end switch c
 
 		if newlines == 2 {
-			log.Printf("%s ERROR Replay Footer found 2 newlines but failed to confirm content?! fp='%s'", who, ovfh.File_path)
+			log.Printf("who='%s' ERROR Replay Footer found 2 newlines but failed to confirm content?! fp='%s'", who, ovfh.File_path)
 			// anyways found 2 newlines, break and see checks
 			break
 		}
 
 		if startindex < OV_RESERVE_BEG {
 			// dont run into the header...
-			log.Printf("%s ERROR Replay Footer startindex=%d < OV_RESERVE_BEG=%d fp='%s'", who, startindex, OV_RESERVE_BEG, ovfh.File_path)
+			log.Printf("who='%s' ERROR Replay Footer startindex=%d < OV_RESERVE_BEG=%d fp='%s'", who, startindex, OV_RESERVE_BEG, ovfh.File_path)
 			break
 		}
 		startindex-- // decrease index to walk backwards
@@ -1638,22 +1642,22 @@ replay:
 		needs_trues, trues, frees, newlines, tabs, position, startindex, endindex, ovfh.File_path)
 
 	if trues != needs_trues {
-		log.Printf("%s ERROR Replay Footer %s", who, retstring)
+		log.Printf("who='%s' ERROR Replay Footer %s", who, retstring)
 		return false
 	}
 
 	if tabs != OVERVIEW_TABS {
-		log.Printf("%s ERROR Replay_Footer lastline startindex=%d tabs=%d != OVERVIEW_TABS=%d", who, startindex, tabs, OVERVIEW_TABS)
+		log.Printf("who='%s' ERROR Replay_Footer lastline startindex=%d tabs=%d != OVERVIEW_TABS=%d", who, startindex, tabs, OVERVIEW_TABS)
 		return false
 	}
 
 	if endindex == 0 || endindex < startindex {
-		log.Printf("%s ERROR Replay_Footer endindex=%d < startindex=%d", who, endindex, startindex)
+		log.Printf("who='%s' ERROR Replay_Footer endindex=%d < startindex=%d", who, endindex, startindex)
 		return false
 	}
 
 	if DEBUG_OV {
-		log.Printf("%s OK Replay Footer %s", who, retstring)
+		log.Printf("who='%s' OK Replay Footer %s", who, retstring)
 	}
 
 	//log.Printf("Replay_Footer PRE tabs=%d newlines=%d frees=%d", tabs, newlines, frees)
@@ -1662,26 +1666,26 @@ replay:
 	// which should be the ovh.Last value - 1
 	lastline := string(ovfh.Mmap_handle[startindex+1 : endindex])
 	if DEBUG_OV {
-		log.Printf("%s Replay_Footer lastline='%s'", who, lastline)
+		log.Printf("who='%s' Replay_Footer lastline='%s'", who, lastline)
 	}
 	last_str := strings.Split(lastline, "\t")[0]
 	if frees > 1 {
 		oldFindex := ovfh.Findex
 		diff := frees - 1
 		ovfh.Findex -= diff
-		log.Printf("%s WARN OV adjusted frees=%d oldFindex=%d - diff=%d = Findex=%d", who, frees, oldFindex, diff, ovfh.Findex)
+		log.Printf("who='%s' WARN OV adjusted frees=%d oldFindex=%d - diff=%d = Findex=%d", who, frees, oldFindex, diff, ovfh.Findex)
 		time.Sleep(5 * time.Second) // DEBUG SLEEP
 
 	}
 	if utils.IsDigit(last_str) {
 		if utils.Str2uint64(last_str) == ovfh.Last-1 {
 			if DEBUG_OV {
-				log.Printf("%s Replay_Footer OK fp='%s' last=%s next=%d", who, ovfh.File_path, last_str, ovfh.Last)
+				log.Printf("who='%s' Replay_Footer OK fp='%s' last=%s next=%d", who, ovfh.File_path, last_str, ovfh.Last)
 			}
 			return true
 		}
 	}
-	log.Printf("%s ERROR Replay_Footer last=%s ovfh.Last=%d  fp='%s'", who, last_str, ovfh.Last, filepath.Base(ovfh.File_path))
+	log.Printf("who='%s' ERROR Replay_Footer last=%s ovfh.Last=%d  fp='%s'", who, last_str, ovfh.Last, filepath.Base(ovfh.File_path))
 	return false
 } // end Replay_Footer
 
@@ -1692,7 +1696,7 @@ func Write_ov(who string, ovfh *OVFH, data string, is_head bool, is_foot bool, g
 	len_data := len(databyte)
 	mmap_size := len(ovfh.Mmap_handle)
 	if DEBUG_OV {
-		log.Printf("%s Write_ov len_data=%d is_head=%t is_foot=%t fp='%s'", who, len_data, is_head, is_foot, filepath.Base(ovfh.File_path))
+		log.Printf("who='%s' Write_ov len_data=%d is_head=%t is_foot=%t fp='%s'", who, len_data, is_head, is_foot, filepath.Base(ovfh.File_path))
 	}
 
 	// set start Findex vs reserved space at beginning of map
@@ -1722,31 +1726,32 @@ func Write_ov(who string, ovfh *OVFH, data string, is_head bool, is_foot bool, g
 	newbodysize := len_data + ovfh.Findex
 
 	if DEBUG_OV {
-		log.Printf("%s Write_ov bodyspace=%d len_data=%d freespace=%d Findex=%d newsize=%d", who, len_data, bodyspace, freespace, ovfh.Findex, newbodysize)
+		log.Printf("who='%s' Write_ov bodyspace=%d len_data=%d freespace=%d Findex=%d newsize=%d", who, len_data, bodyspace, freespace, ovfh.Findex, newbodysize)
 	}
 
 	var new_ovfh *OVFH
 	if !is_foot && (freespace <= 1 || newbodysize >= bodyend) {
 		if DEBUG_OV {
-			log.Printf("%s Write_ov GROW OVERVIEW Findex=%d len_data=%d freespace=%d bodyend=%d newsize=%d hash='%s'", who, ovfh.Findex, len_data, freespace, bodyend, newbodysize, ovfh.Hash)
+			log.Printf("who='%s' Write_ov GROW OVERVIEW Findex=%d len_data=%d freespace=%d bodyend=%d newsize=%d hash='%s'", who, ovfh.Findex, len_data, freespace, bodyend, newbodysize, ovfh.Hash)
 		}
-		pages, blocksize := 1, "128K"
-		if newbodysize < 1024*1024 {
+		pages, blocksize := 1, "128K" // default
+		if newbodysize < 4*1024*1024 { // < 4M
 			pages, blocksize = 1, "4K" // grow by 4K
-		} else if newbodysize >= 1024*1024 && newbodysize < 8*1024*1024 {
+		} else if newbodysize >= 4*1024*1024 && newbodysize < 128*1024*1024 {  // 4M - 128M
 			pages, blocksize = 4, "4K" // grow by 16K
-		} else if newbodysize >= 8*1024*1024 && newbodysize < 32*1024*1024 {
+		} else if newbodysize >= 128*1024*1024 && newbodysize < 1024*1024*1024 { // 128M - 1G
 			pages, blocksize = 8, "4K" // grow by 64K
-		} else if newbodysize >= 32*1024*1024 {
+		} else if newbodysize >= 1024*1024*1024 { // > 1G
 			pages, blocksize = 1, "128K" // grow by 128K
 		}
 		new_ovfh, err = Grow_ov(who, ovfh, pages, blocksize, 0, delete)
 		if err != nil || new_ovfh == nil || new_ovfh.Mmap_handle == nil || len(new_ovfh.Mmap_handle) == 0 {
-			overflow_err := fmt.Errorf("%s ERROR Write_ovfh -> Grow_ov err='%v' newsize=%d avail=%d mmap_size=%d fp='%s' mmaphandle=%d", who, err, newbodysize, freespace, new_ovfh.Mmap_size, filepath.Base(new_ovfh.File_path), len(new_ovfh.Mmap_handle))
+			//overflow_err := fmt.Errorf("%s ERROR Write_ovfh -> Grow_ov err='%v' newsize=%d avail=%d mmap_size=%d fp='%s' mmaphandle=%d", who, err, newbodysize, freespace, new_ovfh.Mmap_size, filepath.Base(new_ovfh.File_path), len(new_ovfh.Mmap_handle)) // fix nil pointer
+			overflow_err := fmt.Errorf("%s ERROR Write_ovfh -> Grow_ov err='%v' newsize=%d avail=%d", who, err, newbodysize, freespace)
 			return nil, overflow_err, ERR_OV_OVERFLOW
 		}
 		if DEBUG_OV {
-			log.Printf("%s Write_ov DONE GROW OVERVIEW hash='%s'", who, ovfh.Hash)
+			log.Printf("who='%s' Write_ov DONE GROW OVERVIEW hash='%s'", who, ovfh.Hash)
 		}
 		if new_ovfh != nil && new_ovfh.Mmap_handle != nil {
 			ovfh = new_ovfh
@@ -1767,7 +1772,7 @@ func Write_ov(who string, ovfh *OVFH, data string, is_head bool, is_foot bool, g
 				log.Printf("write databyte index=%d/%d %d/%d bytes=%d delete=%t", index, ovfh.Mmap_range, pos, len(databyte)-1, len(databyte), delete)
 			}
 			if index >= ovfh.Mmap_size {
-				log.Printf("%s Write_ov GROW fp='%s' reached end index=%d mmap_size=%d pos=%d len_databyte=%d break", who, filepath.Base(ovfh.File_path), index, ovfh.Mmap_size, pos+1, len(databyte))
+				log.Printf("who='%s' Write_ov GROW fp='%s' reached end index=%d mmap_size=%d pos=%d len_databyte=%d break", who, filepath.Base(ovfh.File_path), index, ovfh.Mmap_size, pos+1, len(databyte))
 				break
 			}
 			ovfh.Mmap_handle[index] = abyte
@@ -1784,7 +1789,7 @@ func Write_ov(who string, ovfh *OVFH, data string, is_head bool, is_foot bool, g
 		// writes data to mmap byte for byte
 		for pos, abyte := range databyte {
 			if index >= ovfh.Mmap_size {
-				log.Printf("%s Write_ov GROW fp='%s' reached end index=%d mmap_size=%d pos=%d len_databyte=%d break", who, filepath.Base(ovfh.File_path), index, ovfh.Mmap_size, pos+1, len(databyte))
+				log.Printf("who='%s' Write_ov GROW fp='%s' reached end index=%d mmap_size=%d pos=%d len_databyte=%d break", who, filepath.Base(ovfh.File_path), index, ovfh.Mmap_size, pos+1, len(databyte))
 				break
 			}
 			if DEBUG_OV {
@@ -1815,7 +1820,7 @@ func Write_ov(who string, ovfh *OVFH, data string, is_head bool, is_foot bool, g
 			return nil, fmt.Errorf("%s ERROR Write_ov Mmap_handle == nil fp='%s'", who, filepath.Base(ovfh.File_path)), ""
 		}
 		if DEBUG_OV {
-			log.Printf("%s Write_ov #346 data=%d Findex=%d limit=%d range=%d handle=%d fp='%s' delete=%t", who, len(data), startindex, limit, ovfh.Mmap_range, len(ovfh.Mmap_handle), filepath.Base(ovfh.File_path), delete)
+			log.Printf("who='%s' Write_ov #346 data=%d Findex=%d limit=%d range=%d handle=%d fp='%s' delete=%t", who, len(data), startindex, limit, ovfh.Mmap_range, len(ovfh.Mmap_handle), filepath.Base(ovfh.File_path), delete)
 		}
 
 		// writes data to mmap byte for byte
@@ -1863,7 +1868,7 @@ func Read_Foot_ov(who string, ovfh *OVFH) (string, error) {
 		ov_footer := string(ovfh.Mmap_handle[foot_start:])
 		if check_ovfh_footer(who, ov_footer) {
 			if DEBUG_OV {
-				log.Printf("%s OK Read_Foot_ov -> check_ovfh_footer", who)
+				log.Printf("who='%s' OK Read_Foot_ov -> check_ovfh_footer", who)
 			}
 			return ov_footer, nil
 		} else {
@@ -1890,25 +1895,25 @@ func Create_ov(who string, File_path string, hash string, pages int) error {
 	wb, wbt := 0, 0 // debugs written bytes
 
 	if wb, err = init_file(who, File_path, ov_header, false); err != nil {
-		log.Printf("%s ERROR Create_ov init_file ov_header fp='%s' err='%v'", who, File_path, err)
+		log.Printf("who='%s' ERROR Create_ov init_file ov_header fp='%s' err='%v'", who, File_path, err)
 		return err
 	}
 	wbt += wb
 
 	if wb, err = init_file(who, File_path, ov_body, false); err != nil {
-		log.Printf("%s ERROR Create_ov init_file ov_body fp='%s' err='%v'", who, File_path, err)
+		log.Printf("who='%s' ERROR Create_ov init_file ov_body fp='%s' err='%v'", who, File_path, err)
 		return err
 	}
 	wbt += wb
 
 	if wb, err = init_file(who, File_path, ov_footer, false); err != nil {
-		log.Printf("%s ERROR Create_ov init_file ov_footer fp='%s' err='%v'", who, File_path, err)
+		log.Printf("who='%s' ERROR Create_ov init_file ov_footer fp='%s' err='%v'", who, File_path, err)
 		return err
 	}
 	wbt += wb
 
 	if DEBUG_OV {
-		log.Printf("%s Create_ov OK fp='%s' wbt=%d", who, File_path, wbt)
+		log.Printf("who='%s' Create_ov OK fp='%s' wbt=%d", who, File_path, wbt)
 	}
 	return nil
 
@@ -1922,7 +1927,7 @@ func Grow_ov(who string, ovfh *OVFH, pages int, blocksize string, mode int, dele
 	var wbt int
 
 	if DEBUG_OV {
-		log.Printf("%s Grow_ov pages=%d bs=%s fp='%s'", who, pages, blocksize, ovfh.File_path)
+		log.Printf("who='%s' Grow_ov pages=%d bs=%s fp='%s'", who, pages, blocksize, ovfh.File_path)
 	}
 
 	if mode != 999 { // dont do these checks if we want to fix overview footer
@@ -1938,31 +1943,31 @@ func Grow_ov(who string, ovfh *OVFH, pages int, blocksize string, mode int, dele
 		}
 		if retbool := check_ovfh_header(who, header); !retbool {
 			err = fmt.Errorf("%s ERROR Grow_ov -> check_ovfh_header fp='%s' header='%s' retbool=false", who, ovfh.File_path, header)
-			log.Printf("%s ERROR Grow_ov -> check_ovfh_header err='%v'", who, err)
+			log.Printf("who='%s' ERROR Grow_ov -> check_ovfh_header err='%v'", who, err)
 			return nil, err
 		}
 		if DEBUG_OV {
-			log.Printf("%s Grow_ov fp='%s' check_ovfh_header OK Findex=%d", who, ovfh.File_path, ovfh.Findex)
+			log.Printf("who='%s' Grow_ov fp='%s' check_ovfh_header OK Findex=%d", who, ovfh.File_path, ovfh.Findex)
 		}
 
 		// check footer
 		if footer, err = Read_Foot_ov(who, ovfh); err != nil {
-			log.Printf("%s ERROR Grow_ov -> Read_Foot_ov err='%v'", who, err)
+			log.Printf("who='%s' ERROR Grow_ov -> Read_Foot_ov err='%v'", who, err)
 			return nil, err
 		}
 		if retbool := check_ovfh_footer(who, footer); !retbool {
 			err = fmt.Errorf("%s ERROR Grow_ov -> check_ovfh_footer fp='%s' footer='%s' retbool=false", who, ovfh.File_path, footer)
-			log.Printf("%s ERROR Grow_ov -> check_ovfh_footer err='%v'", who, err)
+			log.Printf("who='%s' ERROR Grow_ov -> check_ovfh_footer err='%v'", who, err)
 			return nil, err
 		}
 		if DEBUG_OV {
-			log.Printf("%s Grow_ov fp='%s' check_ovfh_footer OK Findex=%d", who, ovfh.File_path, ovfh.Findex)
+			log.Printf("who='%s' Grow_ov fp='%s' check_ovfh_footer OK Findex=%d", who, ovfh.File_path, ovfh.Findex)
 		}
 
 		// 1. overwrite footer area while still mapped
 		delete = false
 		if _, err, errstr = Write_ov(who, ovfh, "", false, true, true, delete); err != nil {
-			log.Printf("%s ERROR Grow_ov -> Write_ov err='%v' errstr='%s'", who, err, errstr)
+			log.Printf("who='%s' ERROR Grow_ov -> Write_ov err='%v' errstr='%s'", who, err, errstr)
 			return nil, err
 		}
 
@@ -1972,7 +1977,7 @@ func Grow_ov(who string, ovfh *OVFH, pages int, blocksize string, mode int, dele
 		if mode == 999 {
 			// 1. overwrite footer area while still mapped
 			if _, err, errstr = Write_ov(who, ovfh, "", false, true, true, delete); err != nil {
-				log.Printf("%s ERROR Grow_ov -> Write_ov err='%v' errstr='%s' mode=%d", who, err, errstr, mode)
+				log.Printf("who='%s' ERROR Grow_ov -> Write_ov err='%v' errstr='%s' mode=%d", who, err, errstr, mode)
 				return nil, err
 			}
 		}*/
@@ -1983,24 +1988,24 @@ func Grow_ov(who string, ovfh *OVFH, pages int, blocksize string, mode int, dele
 		return nil, err
 	}
 	if DEBUG_OV {
-		log.Printf("%s Grow_ov -> 2. mmap closed OK fp='%s' ", who, ovfh.File_path)
+		log.Printf("who='%s' Grow_ov -> 2. mmap closed OK fp='%s' ", who, ovfh.File_path)
 	}
 
 	// 3. extend the overview body
 	if wb, err := init_file(who, ovfh.File_path, zerofill_block(pages, blocksize), true); err != nil {
-		log.Printf("%s ERROR Grow_ov -> init_file1 err='%v'", who, err)
+		log.Printf("who='%s' ERROR Grow_ov -> init_file1 err='%v'", who, err)
 		return nil, err
 	} else {
 		wbt += wb
 	}
 	if DEBUG_OV {
-		log.Printf("%s Grow_ov fp='%s' zerofill_block=%d OK", who, ovfh.File_path, wbt)
+		log.Printf("who='%s' Grow_ov fp='%s' zerofill_block=%d OK", who, ovfh.File_path, wbt)
 	}
 	if delete {
 		// 3.1 reopen mmap file
 		ovfh.File_handle, ovfh.Mmap_handle, err = utils.MMAP_FILE(ovfh.File_path, "r")
 		if err != nil || ovfh == nil {
-			log.Printf("%s ERROR Grow_ov -> 3.1 handle_open_ov new_ovfh='%v' err='%v'", who, ovfh, err)
+			log.Printf("who='%s' ERROR Grow_ov -> 3.1 handle_open_ov new_ovfh='%v' err='%v'", who, ovfh, err)
 			return nil, err
 		}
 		if ovfh.Mmap_handle == nil {
@@ -2008,17 +2013,18 @@ func Grow_ov(who string, ovfh *OVFH, pages int, blocksize string, mode int, dele
 			log.Printf("%s", err)
 			return nil, err
 		}
-		log.Printf("3.1 reopen mmap file oldMmap_size=%d newMmap_size=%d", ovfh.Mmap_size, len(ovfh.Mmap_handle))
+		diff := len(ovfh.Mmap_handle) - ovfh.Mmap_size
+		log.Printf("3.1 reopen mmap file oldMmap_size=%d newMmap_size=%d diff=%d", ovfh.Mmap_size, len(ovfh.Mmap_handle), diff)
 		ovfh.Mmap_size = len(ovfh.Mmap_handle)
 		ovfh.Mmap_range = ovfh.Mmap_size - 1
 		// 3.2 unmap and close overview mmap
 		retbool, err := utils.MMAP_CLOSE(ovfh.File_path, ovfh.File_handle, ovfh.Mmap_handle, "r")
 		if !retbool || err != nil {
-			log.Printf("%s Error Grow_ov -> 3.2 MMAP_CLOSE retbool=%t err='%v' fp='%s' ", who, retbool, err, ovfh.File_path)
+			log.Printf("who='%s' Error Grow_ov -> 3.2 MMAP_CLOSE retbool=%t err='%v' fp='%s' ", who, retbool, err, ovfh.File_path)
 			return nil, err
 		}
 		if DEBUG_OV {
-			log.Printf("%s Grow_ov -> 3.2 mmap closed OK fp='%s' ", who, ovfh.File_path)
+			log.Printf("who='%s' Grow_ov -> 3.2 mmap closed OK fp='%s' ", who, ovfh.File_path)
 		}
 		ovfh.Mmap_size += OV_RESERVE_END
 	}
@@ -2026,21 +2032,24 @@ func Grow_ov(who string, ovfh *OVFH, pages int, blocksize string, mode int, dele
 	// 4. append footer
 	ov_footer := construct_footer(who, ovfh, "Grow_ov()")
 	if len(ov_footer) != OV_RESERVE_END {
-		log.Printf("%s Error Grow_ov -> 4. ov_footer=%d != OV_RESERVE_END=%d", len(ov_footer), OV_RESERVE_END)
+		log.Printf("who='%s' Error Grow_ov -> 4. ov_footer=%d != OV_RESERVE_END=%d", len(ov_footer), OV_RESERVE_END)
 		return nil, err
 	}
 	if wb, err := init_file(who, ovfh.File_path, ov_footer, true); err != nil {
-		log.Printf("%s ERROR Grow_ov -> init_file2 err='%v'", who, err)
+		log.Printf("who='%s' ERROR Grow_ov -> init_file2 err='%v'", who, err)
 		return nil, err
 	} else {
 		wbt += wb
 	}
 	// footer appended
+	if mode == 999 {
+		log.Printf("who='%s' footer appended err='%v'", who, err)
+	}
 
 	// 5. reopen mmap file
 	new_ovfh, err := handle_open_ov(who, ovfh.Hash, ovfh.File_path)
 	if err != nil || new_ovfh == nil {
-		log.Printf("%s ERROR Grow_ov -> handle_open_ov new_ovfh='%v' err='%v'", who, new_ovfh, err)
+		log.Printf("who='%s' ERROR Grow_ov -> handle_open_ov new_ovfh='%v' err='%v'", who, new_ovfh, err)
 		return nil, err
 	}
 	if new_ovfh.Mmap_handle == nil {
@@ -2051,7 +2060,7 @@ func Grow_ov(who string, ovfh *OVFH, pages int, blocksize string, mode int, dele
 	// 6. done
 	body_end := new_ovfh.Mmap_size - OV_RESERVE_END
 	if DEBUG_OV {
-		log.Printf("%s Grow_ov OK fp='%s' wbt=%d body_end=%d Findex=%d", who, new_ovfh.File_path, wbt, body_end, new_ovfh.Findex)
+		log.Printf("who='%s' Grow_ov OK fp='%s' wbt=%d body_end=%d Findex=%d", who, new_ovfh.File_path, wbt, body_end, new_ovfh.Findex)
 	}
 	return new_ovfh, err
 } // end func Grow_ov
@@ -2061,15 +2070,15 @@ func Update_Footer(who string, ovfh *OVFH, src string) (*OVFH, error) {
 		return nil, fmt.Errorf("%s ERROR Update_Footer ovfh.Findex=%d ovfh.Last=%d src=%s ovfh.Mmap_handle=%d src=%s", who, ovfh.Findex, ovfh.Last, src, len(ovfh.Mmap_handle), src)
 	}
 	if DEBUG_OV {
-		log.Printf("%s Update_Footer ovfh.Findex=%d ovfh.Last=%d src=%s", who, ovfh.Findex, ovfh.Last, src)
+		log.Printf("who='%s' Update_Footer ovfh.Findex=%d ovfh.Last=%d src=%s", who, ovfh.Findex, ovfh.Last, src)
 	}
 	ov_footer := construct_footer(who, ovfh, "Update_Footer()")
 	new_ovfh, err, _ := Write_ov(who, ovfh, ov_footer, false, true, false, false)
 	if err != nil {
-		log.Printf("%s ERROR Update_Footer -> Write_ov err='%v' src=%s", who, err, src)
+		log.Printf("who='%s' ERROR Update_Footer -> Write_ov err='%v' src=%s", who, err, src)
 	} else {
 		if DEBUG_OV {
-			log.Printf("%s OK Update_Footer -> Write_ov len_ov_footer=%d src=%s", who, len(ov_footer), src)
+			log.Printf("who='%s' OK Update_Footer -> Write_ov len_ov_footer=%d src=%s", who, len(ov_footer), src)
 		}
 	}
 	return new_ovfh, err
@@ -2081,7 +2090,7 @@ func construct_footer(who string, ovfh *OVFH, src string) string {
 	bodyend := ovfh.Mmap_size - OV_RESERVE_END
 	foot_str := fmt.Sprintf("%s%d,last=%d,Findex=%d,bodyend=%d,fend=%d,zeropad=%s,%s", FOOTER_BEG, utils.Nano(), ovfh.Last, ovfh.Findex, bodyend, bodyend+OV_RESERVE_END, ZERO_PATTERN, FOOTER_END)
 	if DEBUG_OV {
-		log.Printf("%s | construct_footer foot_str='%s' src=%s", who, foot_str, src)
+		log.Printf("who='%s' | construct_footer foot_str='%s' src=%s", who, foot_str, src)
 	}
 	ov_footer := zerofill(foot_str, OV_RESERVE_END)
 	return ov_footer
@@ -2092,10 +2101,10 @@ func check_ovfh_header(who string, header string) bool {
 		if strings.HasSuffix(header, HEADER_END) {
 			return true
 		} else {
-			log.Printf("%s ERROR check_ovfh_header !HasSuffix", who)
+			log.Printf("who='%s' ERROR check_ovfh_header !HasSuffix", who)
 		}
 	} else {
-		log.Printf("%s ERROR check_ovfh_header !HasPrefix", who)
+		log.Printf("who='%s' ERROR check_ovfh_header !HasPrefix", who)
 	}
 	return false
 } // end func check_ovfh_header
@@ -2121,18 +2130,18 @@ func check_ovfh_footer(who string, footer string) bool {
 			*/
 			return true
 		} else {
-			log.Printf("%s ERROR check_ovfh_footer !HasSuffix", who)
+			log.Printf("who='%s' ERROR check_ovfh_footer !HasSuffix", who)
 		}
 
 	} else {
-		log.Printf("%s ERROR check_ovfh_footer !HasPrefix", who)
+		log.Printf("who='%s' ERROR check_ovfh_footer !HasPrefix", who)
 	}
 	return false
 } // end func check_ovfh_footer
 
 func init_file(who string, File_path string, data string, grow bool) (int, error) {
 	if DEBUG_OV {
-		log.Printf("%s init_file fp='%s' len_data=%d grow=%t", who, File_path, len(data), grow)
+		log.Printf("who='%s' init_file fp='%s' len_data=%d grow=%t", who, File_path, len(data), grow)
 	}
 	var fh *os.File
 	var err error
@@ -2143,13 +2152,13 @@ func init_file(who string, File_path string, data string, grow bool) (int, error
 		if wb, err = w.WriteString(data); err == nil {
 			if err = w.Flush(); err == nil {
 				if DEBUG_OV {
-					log.Printf("%s init_file wrote fp='%s' len_data=%d wb=%d grow=%t", who, File_path, len(data), wb, grow)
+					log.Printf("who='%s' init_file wrote fp='%s' len_data=%d wb=%d grow=%t", who, File_path, len(data), wb, grow)
 				}
 				return wb, nil
 			}
 		}
 	}
-	log.Printf("%s ERROR init_file err='%v'", who, err)
+	log.Printf("who='%s' ERROR init_file err='%v'", who, err)
 	return wb, err
 } // end func init_file
 
