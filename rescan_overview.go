@@ -244,7 +244,7 @@ rescan_OV:
 						if mode == 999 {
 							fix_flag = "fix-footer"
 						}
-						log.Printf("WARN Rescan_OV footer last=%d != last_msgnum=%d fp='%s'", f_last, last_msgnum, filepath.Base(file_path))
+						log.Printf("WARN Rescan_OV footer last=%d != last_msgnum=%d fp='%s' badfooter=True", f_last, last_msgnum, filepath.Base(file_path))
 
 					} else {
 						log.Printf(" --> Rescan_OV footer last=OK=%d  fp='%s'", f_last, filepath.Base(file_path))
@@ -269,7 +269,7 @@ rescan_OV:
 						log.Printf(" --> Rescan_OV footer f_zero=%d fp='%s'", f_zero, filepath.Base(file_path))
 					}
 
-					log.Printf(" > END Rescan_OV ov_footer='%s' len=%d  tabs=%d newlines=%d last_newline_pos=%d pos=%d fp='%s'", ov_footer, len(ov_footer), tabs, newlines, last_newline_pos, position, filepath.Base(file_path))
+					log.Printf(" > END Rescan_OV ov_footer='%s' len=%d  tabs=%d newlines=%d last_newline_pos=%d pos=%d fp='%s' badfooter=%t", ov_footer, len(ov_footer), tabs, newlines, last_newline_pos, position, filepath.Base(file_path), badfooter)
 					if !badfooter {
 						/*
 							if mode != 997 && mode != 998 {
@@ -422,7 +422,7 @@ rescan_OV:
 					return false, 0
 				}
 				if uniq_msgids[msgid] > 0 {
-					log.Printf("WARN Rescan_OV#5a @line=%d !uniq_msgid msgnum=%d msgid='%s' firstL=%d", lines, msgnum, msgid, uniq_msgids[msgid])
+					//log.Printf("WARN Rescan_OV#5a @line=%d !uniq_msgid msgnum=%d msgid='%s' firstL=%d", lines, msgnum, msgid, uniq_msgids[msgid])
 					//return false, last_msgnum
 
 				} else {
