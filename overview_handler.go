@@ -123,6 +123,7 @@ func (oh *OV_Handler) GetOpen(hid int, who string, file_path string, hash string
 
 	// was not open, return empty OVFH struct and true, will create new file handle
 	log.Printf("%s ERROR GetOpen failed final hash='%s'", hid, hash)
+	OV_handler.KILL(who)
 	return nil, false
 } // end func OV_Handler.GetOpen
 
