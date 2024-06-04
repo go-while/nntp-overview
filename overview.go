@@ -9,13 +9,14 @@ import (
 	//"encoding/gob"
 	"io"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	//"sync"
 	"database/sql"
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 	"time"
 	"unicode"
 )
@@ -2590,11 +2591,16 @@ func ParseHeaderKeys(head *[]string, laxmid bool) (headermap map[string][]string
 		key = string(line[0:k])
 		value := string(line[k+1:])
 
-		for j, c := range key {
-			if c < 33 || c > 126 {
-				return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: Key 'c < 32 || c > 126' key='%s' line='%s' i=%d j=%d", key, line, i, j)
+		/*
+		for j, c := range value {
+			if c == 32 || c == 9 {
+				continue
+			}
+			if c < 32 || c > 126 || c == ':' {
+				return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: value 'c < 32 || c > 126 || ';'' value='%s' line='%s' line_i=%d idx=j=%d c=num=%d", value, line, i, j, c)
 			}
 		}
+		*/
 		/*
 			for j, c := range value {
 				if c < 32 && c != 9 {
@@ -2602,6 +2608,7 @@ func ParseHeaderKeys(head *[]string, laxmid bool) (headermap map[string][]string
 				}
 			}
 		*/
+
 		headermap[key] = append(headermap[key], value)
 		keysorder = append(keysorder, key)
 	}
@@ -2800,27 +2807,85 @@ func MsgIDhash2mysql(messageidhash string, size int, db *sql.DB) (bool, error) {
 	if len(messageidhash) != 64 || size == 0 {
 		return false, fmt.Errorf("ERROR overview.MsgIDhash2mysql len(messageidhash)=%d != 64 || size=%d", len(messageidhash), size)
 	}
-	if stmt, err := db.Prepare("INSERT INTO msgidhash (hash, fsize) VALUES (?,?)"); err != nil {
+
+	//tablename := "h_"+string(messageidhash[0:2])
+	//query := "INSERT INTO h_"+string(messageidhash[0:2])+" (hash, fsize) VALUES (?,?)"
+	stmt, err := db.Prepare("INSERT INTO h_"+string(messageidhash[0:3])+" (hash, fsize) VALUES (?,?)"); // printhashsql cut first N chars
+	if err != nil {
 		log.Printf("ERROR overview.MsgIDhash2mysql db.Prepare() err='%v'", err)
 		return false, err
+	}
+	defer stmt.Close()
+	if res, err := stmt.Exec(messageidhash[3:], size); err != nil { // printhashsql cut first N chars
+		//log.Printf("ERROR overview.MsgIDhash2mysql stmt.Exec() err='%v'", err)
+		return false, err
 	} else {
-		if res, err := stmt.Exec(messageidhash, size); err != nil {
-			//log.Printf("ERROR overview.MsgIDhash2mysql stmt.Exec() err='%v'", err)
+		if rowCnt, err := res.RowsAffected(); err != nil {
+			log.Printf("ERROR overview.MsgIDhash2mysql res.RowsAffected() err='%v'", err)
 			return false, err
 		} else {
-			if rowCnt, err := res.RowsAffected(); err != nil {
-				log.Printf("ERROR overview.MsgIDhash2mysql res.RowsAffected() err='%v'", err)
-				return false, err
-			} else {
-				if rowCnt == 1 {
-					return true, nil // inserted
-				}
-				return false, nil // duplicate
+			if rowCnt == 1 {
+				return true, nil // inserted
 			}
+			return false, nil // duplicate
 		}
 	}
 	return false, fmt.Errorf("ERROR overview.MsgIDhash2mysql() uncatched return")
 } // end func MsgIDhash2mysql
+
+func MsgIDhash2mysqlMany(key string, list []Msgidhash_item, db *sql.DB, tried int) (bool, error) {
+	if len(list) == 0 {
+		return false, fmt.Errorf("ERROR overview.MsgIDhash2mysqlMany key=%s list empty", key)
+	}
+	if tried > 15 {
+		log.Printf("ERROR MsgIDhash2mysqlMany tried=%d")
+		os.Exit(1)
+	}
+	var vals []interface{}
+
+	query := "INSERT IGNORE INTO h_"+key+" (hash, fsize) VALUES "
+	for i, item := range list {
+		if len(item.Hash) != 64 || item.Size <= 0 { // printhashsql
+			log.Printf("ERROR overview.MsgIDhash2mysqlMany item='%#v' len(list)=%d i=%d key=%s", item, len(list), i , key)
+			os.Exit(1)
+		}
+		query += "(?,?),"
+		vals = append(vals, string(item.Hash[3:]), item.Size) // printhashsql cut first N chars
+	}
+	query = strings.TrimSuffix(query, ",")
+	stmt, err := db.Prepare(query);
+	if err != nil {
+		log.Printf("ERROR overview.MsgIDhash2mysqlMany db.Prepare() key=%s err='%v'", key, err)
+		return false, err
+	}
+	defer stmt.Close()
+	if _, sqlerr := stmt.Exec(vals...); sqlerr != nil {
+		if driverErr, isErr := sqlerr.(*mysql.MySQLError); isErr {
+			retry := false
+			switch driverErr.Number {
+				case 1205:
+					// Lock wait timeout exceeded; try restarting transaction
+					retry = true
+				case 1213:
+					// Deadlock found when trying to get lock; try restarting transaction
+					retry = true
+			}
+			if retry {
+				isleep := time.Duration(rand.Intn(60))*time.Second
+				if isleep < 5 {
+					isleep = 5
+				}
+				time.Sleep(isleep)
+				tried++
+				return MsgIDhash2mysqlMany(key, list, db, tried)
+			}
+			log.Printf("overview.MsgIDhash2mysqlMany driverErr='%v' num=%d sqlerr='%v'", driverErr, driverErr.Number, sqlerr)
+		}
+		return false, err
+	}
+	//log.Printf("OK MsgIDhash2mysqlMany key=%s list=%d", key, len(list))
+	return true, nil
+} // end func MsgIDhash2mysqlMany
 
 func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, error) {
 
@@ -2829,7 +2894,8 @@ func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, error) {
 	}
 	var hash string
 	var stat string
-	if err := db.QueryRow("SELECT hash,stat FROM msgidhash WHERE hash = ? LIMIT 1", messageidhash).Scan(&hash,&stat); err != nil {
+	tablename := "h_"+string(messageidhash[0])
+	if err := db.QueryRow("SELECT hash,stat FROM ? WHERE hash = ? LIMIT 1", tablename, messageidhash).Scan(&hash,&stat); err != nil {
 		if err == sql.ErrNoRows {
 			return false, false, nil
 		}

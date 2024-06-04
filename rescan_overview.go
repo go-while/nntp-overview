@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	//"time"
-	"github.com/go-sql-driver/mysql"
+	//"github.com/go-sql-driver/mysql"
 
 )
 
@@ -47,8 +47,13 @@ func returndefermmapclose(ovfh *OVFH, cancelchan chan struct{}) {
 	utils.MMAP_CLOSE(ovfh.File_path, ovfh.File_handle, ovfh.Mmap_handle, "rw")
 }
 
+type Msgidhash_item struct {
+	Hash string
+	Size int
+}
+
 // Rescan_Overview returns: true|false, last_msgnum
-func Rescan_Overview(who string, file_path string, group string, mode int, DEBUG bool, db *sql.DB) (bool, uint64) {
+func Rescan_Overview(who string, file_path string, group string, mode int, DEBUG bool, db *sql.DB, hash2sql *chan map[string][]Msgidhash_item) (bool, uint64) {
 	// the steps are:
 	// check header
 	// check footer ('check footer' runs before 'check lines' or at the end if footer is broken, use mode=4 setting)
@@ -62,7 +67,7 @@ func Rescan_Overview(who string, file_path string, group string, mode int, DEBUG
 	//time.Sleep(time.Second)
 	var err error
 	var fix_flag string
-	var sql_ins, sql_dup = 0, 0
+	//var sql_ins int
 	ovfh := &OVFH{}
 	ovfh.File_path = file_path
 
@@ -87,8 +92,12 @@ func Rescan_Overview(who string, file_path string, group string, mode int, DEBUG
 	startindex := OV_RESERVE_BEG
 	endindex := len_mmap - 1
 
+	msgidhashmap := make(map[string][]Msgidhash_item)
+
 	if mode < 1000 {
 		log.Printf(" --> rescan_OV mode=%d len=%d startindex=%d", mode, len_mmap, startindex)
+	} else {
+
 	}
 
 	if mode == 0 || mode == 1 || mode == 997 || mode == 998 {
@@ -364,38 +373,25 @@ rescan_OV:
 
 				if mode == 1000 {
 					// insert to mysql: full messageidhash with size in bytes
-					if db == nil {
-						log.Printf("ERROR Rescan_OV mode=1000 mysql_db=nil")
-						return false, 0
-					}
+					//if db == nil {
+					//	log.Printf("ERROR Rescan_OV mode=1000 mysql_db=nil")
+					//	return false, 0
+					//}
 					messageidhash := utils.Hash256(fields[4])
 					bytes := utils.Str2int(fields[6])
 					if bytes == 0 {
-						log.Printf("ERROR MsgIDhash2mysql size=0 msgid='%s' hash='%s' msgnum=%s f6=%s fields=%d", fields[4], messageidhash, fields[0], fields[6], len(fields))
+						log.Printf("ERROR prepare MsgIDhash2mysql size=0 msgid='%s' hash='%s' msgnum=%s f6=%s fields=%d", fields[4], messageidhash, fields[0], fields[6], len(fields))
 						for i, field := range fields {
 							log.Printf("field %d = '%s'", i, field)
 						}
 						return false, 0
 					}
-					if retbool, sqlerr := MsgIDhash2mysql(messageidhash, bytes, db); sqlerr != nil || !retbool {
-						if driverErr, ok := sqlerr.(*mysql.MySQLError); ok {
-							switch driverErr.Number {
-								case 1062:
-									// duplicate entry to mysql
-									sql_dup++
-									last_line, last_newlines, last_tabs, last_beg = line, newlines, tabs, position-len(line) // capture
-									line, newlines, tabs = "", 0, 0                                                          // reset looped values and try to find next line
-									position++
-									continue rescan_OV
-								default:
-									log.Printf("mysql driverErr='%v' num=%d sqlerr='%v'", driverErr, driverErr.Number, sqlerr)
-							}
-						}
-						log.Printf("ERROR rescan_overview group='%s' MsgIDhash2mysql uncatched return", group)
-						return false, last_msgnum
-					}
-					// inserted hash to mysql
-					sql_ins++
+					key := string(messageidhash[0:3]) // printhashsql cut first N chars
+					var item Msgidhash_item
+					item.Hash = messageidhash
+					item.Size = bytes
+					msgidhashmap[key] = append(msgidhashmap[key], item)
+					// insert sql
 					last_line, last_newlines, last_tabs, last_beg = line, newlines, tabs, position-len(line) // capture
 					line, newlines, tabs = "", 0, 0                                                          // reset looped values and try to find next line
 					position++
@@ -482,12 +478,45 @@ rescan_OV:
 
 	} // end for rescan_OV
 
+	if db != nil {
+		defer db.Close()
+	}
+
 	if mode == 1000 {
-		if db != nil {
-			db.Close()
-			db = nil
+		if hash2sql != nil {
+			*hash2sql <- msgidhashmap
 		}
-		log.Printf("Rescan_OV mode=1000 msgidhash2mysql returned group='%s' sql_ins=%d sql_dup=%d", group, sql_ins, sql_dup)
+
+		/*
+		if db != nil {
+			defer db.Close()
+			for key, list := range msgidhashmap {
+				if retbool, sqlerr := MsgIDhash2mysqlMany(key, list, db, 0); sqlerr != nil || !retbool {
+
+					if driverErr, isErr := sqlerr.(*mysql.MySQLError); isErr {
+						switch driverErr.Number {
+							case 1062:
+								// duplicate entry to mysql
+								sql_dup++
+								//last_line, last_newlines, last_tabs, last_beg = line, newlines, tabs, position-len(line) // capture
+								//line, newlines, tabs = "", 0, 0                                                          // reset looped values and try to find next line
+								//position++
+								//continue rescan_OV
+							default:
+								log.Printf("mysql driverErr='%v' num=%d sqlerr='%v'", driverErr, driverErr.Number, sqlerr)
+						}
+					}
+					*
+					log.Printf("ERROR rescan_overview group='%s' MsgIDhash2mysqlMany uncatched return", group)
+					os.Exit(1)
+					return false, last_msgnum
+				}
+				// inserted to mysql, including ignored duplicate errors
+				sql_ins += len(list)
+			}
+		}
+		log.Printf("Rescan_OV mode=1000 MsgIDhash2mysqlMany returned group='%s' sql_ins=%d", group, sql_ins)
+		*/
 		return true, last_msgnum
 	}
 

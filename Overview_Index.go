@@ -543,7 +543,7 @@ readlines:
 		who := "ReOrderOV"
 		debug_rescan := false
 		var db *sql.DB = nil
-		retbool, last := Rescan_Overview(who, newfile, group, 999, debug_rescan, db)
+		retbool, last := Rescan_Overview(who, newfile, group, 999, debug_rescan, db, nil)
 		if retbool {
 			log.Printf("OK ReOrderOV Rescan_Overview newfh='%s' retbool=%t last=%d", filepath.Base(newfile), retbool, last)
 			return true
