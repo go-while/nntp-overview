@@ -9,14 +9,12 @@ import (
 	//"encoding/gob"
 	"io"
 	"log"
-	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	//"sync"
-	"database/sql"
-	"github.com/go-sql-driver/mysql"
+
 	"time"
 	"unicode"
 )
@@ -687,6 +685,13 @@ func Construct_OVL(ovl OVL) string {
 	// construct an overview line
 	MAX_REF := 100
 	ref_len, ref_len_limit := 0, 16384
+	maxFieldLen := 256
+	if len(ovl.Subject) > maxFieldLen {
+		ovl.Subject = ovl.Subject[:250]+"..."
+	}
+	if len(ovl.From) > maxFieldLen {
+		ovl.From = ovl.From[:250]+"..."
+	}
 	var references string
 	for i, ref := range ovl.References {
 		len_ref := len(ref)
@@ -2781,164 +2786,3 @@ func extractMatchingText(input string, layout string) string {
 func isspace(b byte) bool {
 	return b < 33
 }
-
-func ConnSQL(username string, password string, hostname string, database string) (*sql.DB, error) {
-	params := "?timeout=86400s"
-	// [username[:password]@][protocol[(address)]]/dbname[?param1=value1&...&paramN=valueN]
-	dsn := fmt.Sprintf("%s:%s@%s(%s)/%s%s", username, password, "tcp", hostname, database, params)
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		log.Printf("ERROR overview.ConnSQL 'open' failed err='%v'", err)
-		return nil, err
-	}
-	err = db.Ping()
-	if err != nil {
-		log.Printf("ERROR overview.ConnSQL 'ping' failed err='%v'", err)
-		return nil, err
-	}
-	return db, nil
-} // end func connSQL
-
-func ShortMsgIDhash2mysql(shorthash string, offset int, db *sql.DB) (bool, error) {
-	return false, nil
-} // end func ShortMsgIDhash2mysql
-
-func MsgIDhash2mysql(messageidhash string, size int, db *sql.DB) (bool, error) {
-	if len(messageidhash) != 64 || size == 0 {
-		return false, fmt.Errorf("ERROR overview.MsgIDhash2mysql len(messageidhash)=%d != 64 || size=%d", len(messageidhash), size)
-	}
-
-	//tablename := "h_"+string(messageidhash[0:2])
-	//query := "INSERT INTO h_"+string(messageidhash[0:2])+" (hash, fsize) VALUES (?,?)"
-	stmt, err := db.Prepare("INSERT INTO h_"+string(messageidhash[0:3])+" (hash, fsize) VALUES (?,?)"); // printhashsql cut first N chars
-	if err != nil {
-		log.Printf("ERROR overview.MsgIDhash2mysql db.Prepare() err='%v'", err)
-		return false, err
-	}
-	defer stmt.Close()
-	if res, err := stmt.Exec(messageidhash[3:], size); err != nil { // printhashsql cut first N chars
-		//log.Printf("ERROR overview.MsgIDhash2mysql stmt.Exec() err='%v'", err)
-		return false, err
-	} else {
-		if rowCnt, err := res.RowsAffected(); err != nil {
-			log.Printf("ERROR overview.MsgIDhash2mysql res.RowsAffected() err='%v'", err)
-			return false, err
-		} else {
-			if rowCnt == 1 {
-				return true, nil // inserted
-			}
-			return false, nil // duplicate
-		}
-	}
-	return false, fmt.Errorf("ERROR overview.MsgIDhash2mysql() uncatched return")
-} // end func MsgIDhash2mysql
-
-func MsgIDhash2mysqlMany(key string, list []Msgidhash_item, db *sql.DB, tried int) (bool, error) {
-	if len(list) == 0 {
-		return false, fmt.Errorf("ERROR overview.MsgIDhash2mysqlMany key=%s list empty", key)
-	}
-	if tried > 15 {
-		log.Printf("ERROR MsgIDhash2mysqlMany tried=%d")
-		os.Exit(1)
-	}
-	var vals []interface{}
-
-	query := "INSERT IGNORE INTO h_"+key+" (hash, fsize) VALUES "
-	for i, item := range list {
-		if len(item.Hash) != 64 || item.Size <= 0 { // printhashsql
-			log.Printf("ERROR overview.MsgIDhash2mysqlMany item='%#v' len(list)=%d i=%d key=%s", item, len(list), i , key)
-			os.Exit(1)
-		}
-		query += "(?,?),"
-		vals = append(vals, string(item.Hash[3:]), item.Size) // printhashsql cut first N chars
-	}
-	query = strings.TrimSuffix(query, ",")
-	stmt, err := db.Prepare(query);
-	if err != nil {
-		log.Printf("ERROR overview.MsgIDhash2mysqlMany db.Prepare() key=%s err='%v'", key, err)
-		return false, err
-	}
-	defer stmt.Close()
-	if _, sqlerr := stmt.Exec(vals...); sqlerr != nil {
-		if driverErr, isErr := sqlerr.(*mysql.MySQLError); isErr {
-			retry := false
-			switch driverErr.Number {
-				case 1205:
-					// Lock wait timeout exceeded; try restarting transaction
-					retry = true
-				case 1213:
-					// Deadlock found when trying to get lock; try restarting transaction
-					retry = true
-			}
-			if retry {
-				isleep := time.Duration(rand.Intn(60))*time.Second
-				if isleep < 5 {
-					isleep = 5
-				}
-				time.Sleep(isleep)
-				tried++
-				return MsgIDhash2mysqlMany(key, list, db, tried)
-			}
-			log.Printf("overview.MsgIDhash2mysqlMany driverErr='%v' num=%d sqlerr='%v'", driverErr, driverErr.Number, sqlerr)
-		}
-		return false, err
-	}
-	//log.Printf("OK MsgIDhash2mysqlMany key=%s list=%d", key, len(list))
-	return true, nil
-} // end func MsgIDhash2mysqlMany
-
-func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, error) {
-
-	if len(messageidhash) != 64 {
-		return false, false, fmt.Errorf("ERROR overview.IsMsgidHashSQL len(messageidhash) != 64")
-	}
-	var hash string
-	var stat string
-	tablename := "h_"+string(messageidhash[0])
-	if err := db.QueryRow("SELECT hash,stat FROM ? WHERE hash = ? LIMIT 1", tablename, messageidhash).Scan(&hash,&stat); err != nil {
-		if err == sql.ErrNoRows {
-			return false, false, nil
-		}
-		log.Printf("ERROR overview.IsMsgidHashSQL err='%v'", err)
-		return false, false, err
-	}
-	if hash == messageidhash {
-		var drop bool
-		if len(stat) == 1 {
-			drop = true
-		}
-		/*
-		switch stat {
-			case "a":
-				// abuse takedown
-				drop = true
-			case "b":
-				// banned
-				drop = true
-			case "c":
-				// cancel
-				drop = true
-			case "d":
-				// to delete
-				drop = true
-			case "e":
-				// expired
-				drop = true
-			case "f":
-				// filtered
-				drop = true
-			case "g":
-				// group removed
-				drop = true
-			case "n":
-				// nocem
-				drop = true
-			case "r":
-				// removed
-				drop = true
-		}
-		*/
-		return true, drop, nil
-	}
-	return false, false, fmt.Errorf("ERROR overview.IsMsgidHashSQL() uncatched return")
-} // end func IsMsgidHashSQL
