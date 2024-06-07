@@ -1,5 +1,6 @@
 package overview
 
+
 import (
 	"fmt"
 	"log"
@@ -7,8 +8,15 @@ import (
 	"time"
 	"math/rand"
 	"strings"
+	"sync"
 	"database/sql"
+	"github.com/go-while/go-utils"
 	"github.com/go-sql-driver/mysql"
+)
+
+var (
+	Psql = 256 // parallel sql threads
+	Flushmax = 4096 // * 16^idx = max cached to flush
 )
 
 func PrintHashMySQL(printrocksdb bool) {
@@ -235,3 +243,109 @@ func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, string, error
 	return false, false, "", fmt.Errorf("ERROR overview.IsMsgidHashSQL() uncatched return")
 	*/
 } // end func IsMsgidHashSQL
+
+func ProcessHash2sql(dbh *sql.DB, hash2sql *chan map[string][]Msgidhash_item, donechan *chan struct{}, sqldonechan *chan struct{}, sqlparchan *chan struct{}, wg *sync.WaitGroup) {
+	defer dbh.Close()
+	wg.Add(1)
+	defer wg.Done()
+	done := false
+
+	waited, dupes, flushed := 0, 0, 0
+	tmpmap := make(map[string]map[string]Msgidhash_item, Flushmax) // key, msgidhash, size
+	start := utils.UnixTimeSec()
+	process_hash2sql:
+	for {
+		select {
+			case <- *donechan:
+				done = true
+			case hashmap := <- *hash2sql:
+				waited = 0
+				for key, items := range hashmap {
+					tryflush1 := len(tmpmap[key]) >= Flushmax/4
+					tryflush2 := len(*sqlparchan) > Psql/2
+					tryrand := rand.Intn(1000) <= 20 // flush 2% early?
+					flushnow := (tryflush1 && tryrand) || (tryflush1 && tryflush2)
+					forceflush := len(tmpmap[key]) >= Flushmax
+					if flushnow || forceflush {
+						//if flushnow {
+						//	log.Printf("process_hash2sql flushnow=%d", len(tmpmap[key]))
+						//}
+						// tmpmap for key is big! push to sql first
+						var list []Msgidhash_item
+						for _, item := range tmpmap[key] {
+							if len(item.Hash) == 64 && item.Size > 0 {
+								list = append(list, item)
+							} else {
+								log.Printf("WARN process_hash2sql got nil-hash item?")
+							}
+						}
+						<- *sqlparchan
+						wg.Add(1)
+						go func(key string, list []Msgidhash_item, dbh *sql.DB, sqlparchan *chan struct{}) {
+							//log.Printf("hash2sql key=%s flushing=%d list=%d", key, len(tmpmap[key]), len(list))
+							//startms := utils.UnixTimeMilliSec()
+							if retbool, sqlerr := MsgIDhash2mysqlMany(key, list, dbh, 0); sqlerr != nil || !retbool {
+								log.Printf("ERROR process_hash2sql tmpmap sqlerr='%v'", sqlerr)
+								os.Exit(1)
+							}
+							//log.Printf("hash2sql flushed=%d key=%s took=(%d ms)", len(list), key, utils.UnixTimeMilliSec()-startms)
+							*sqlparchan <- struct{}{}
+							wg.Done()
+						}(key, list, dbh, sqlparchan)
+
+						flushed += len(list)
+						// reset tmpmap
+						tmpmap[key] = make(map[string]Msgidhash_item, Flushmax)
+						list = nil
+					}
+					// merge items / dedupe up to Flushmax
+					for _, item := range items {
+						if tmpmap[key] == nil {
+							tmpmap[key] = make(map[string]Msgidhash_item, Flushmax)
+						}
+						if tmpmap[key][item.Hash].Size > 0 {
+							dupes++
+							continue
+						}
+						tmpmap[key][item.Hash] = item
+					} // end for item in items
+				} // end for items in hashmap
+				hashmap = nil
+
+			default:
+				time.Sleep(10*time.Millisecond)
+				if done {
+					waited++
+					if waited >= 6000 { // 60s
+						var keys []string
+						for key, _ := range tmpmap {
+							keys = append(keys, key)
+						}
+						for _, key := range keys {
+							var list []Msgidhash_item
+							for _, item := range tmpmap[key] {
+								list = append(list, item)
+							}
+							wg.Add(1)
+							go func(key string, list []Msgidhash_item, dbh *sql.DB, sqlparchan *chan struct{}) {
+								<- *sqlparchan
+								//log.Printf("hash2sql key=%s flushing=%d list=%d", key, len(tmpmap[key]), len(list))
+								if retbool, sqlerr := MsgIDhash2mysqlMany(key, list, dbh, 0); sqlerr != nil || !retbool {
+									log.Printf("ERROR process_hash2sql tmpmap sqlerr='%v'", sqlerr)
+									os.Exit(1)
+								}
+								//log.Printf("hash2sql flushed=%d key=%s took=(%d ms)", len(list), key, utils.UnixTimeMilliSec()-startms)
+								*sqlparchan <- struct{}{}
+								wg.Done()
+							}(key, list, dbh, sqlparchan)
+							flushed += len(list)
+							list = nil
+						}
+						break process_hash2sql
+					}
+				}
+		} // end select
+	} // end for process_hash2sql
+	*sqldonechan <- struct{}{}
+	log.Printf("process_hash2sql returned flushed=%d dupes=%d rt=(%d s)", flushed, dupes, utils.UnixTimeSec()-start)
+} // end ProcessHash2sql
