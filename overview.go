@@ -1736,11 +1736,22 @@ func Write_ov(who string, ovfh *OVFH, data string, is_head bool, is_foot bool, g
 	}
 
 	var new_ovfh *OVFH
-	if !is_foot && (freespace <= 1 || newbodysize >= bodyend) {
+	if !is_foot && (freespace <= 1024 || newbodysize >= bodyend) {
 		if DEBUG_OV {
 			log.Printf("who='%s' Write_ov GROW OVERVIEW Findex=%d len_data=%d freespace=%d bodyend=%d newsize=%d hash='%s'", who, ovfh.Findex, len_data, freespace, bodyend, newbodysize, ovfh.Hash)
 		}
-		pages, blocksize := 1, "128K" // default
+		pages, blocksize := 1, "4K" // default
+		needSpace := newbodysize >= bodyend
+		thisAmount := newbodysize - bodyend
+		if needSpace {
+			pages, blocksize = int(thisAmount*16/4096)+1, "4K"
+			if pages <= 0 {
+				pages = 1
+			}
+		}
+		log.Printf("who='%s' Write_ov GROW OVERVIEW free=%d need=%t=%d pages=%d bs=%s hash='%s'", who, freespace, needSpace, thisAmount, pages, blocksize, ovfh.Hash)
+
+		/*
 		if newbodysize < 4*1024*1024 { // < 4M
 			pages, blocksize = 1, "4K" // grow by 4K
 		} else if newbodysize >= 4*1024*1024 && newbodysize < 128*1024*1024 {  // 4M - 128M
@@ -1750,6 +1761,7 @@ func Write_ov(who string, ovfh *OVFH, data string, is_head bool, is_foot bool, g
 		} else if newbodysize >= 1024*1024*1024 { // > 1G
 			pages, blocksize = 1, "128K" // grow by 128K
 		}
+		*/
 		new_ovfh, err = Grow_ov(who, ovfh, pages, blocksize, 0, delete)
 		if err != nil || new_ovfh == nil || new_ovfh.Mmap_handle == nil || len(new_ovfh.Mmap_handle) == 0 {
 			//overflow_err := fmt.Errorf("%s ERROR Write_ovfh -> Grow_ov err='%v' newsize=%d avail=%d mmap_size=%d fp='%s' mmaphandle=%d", who, err, newbodysize, freespace, new_ovfh.Mmap_size, filepath.Base(new_ovfh.File_path), len(new_ovfh.Mmap_handle)) // fix nil pointer
