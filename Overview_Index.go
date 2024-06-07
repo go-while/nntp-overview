@@ -483,6 +483,7 @@ readlines:
 				}
 			}
 
+			/*
 			if spamfilter(subj, "subj", msgid) {
 				log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'subj'", msgid)
 				continue
@@ -492,6 +493,7 @@ readlines:
 				log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'from'", msgid)
 				continue
 			}
+			*/
 
 			doLimitBytes := false
 			if doLimitBytes {
