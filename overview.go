@@ -1749,19 +1749,44 @@ func Write_ov(who string, ovfh *OVFH, data string, is_head bool, is_foot bool, g
 				pages = 1
 			}
 		}
-		log.Printf("who='%s' Write_ov GROW OVERVIEW free=%d need=%t=%d pages=%d bs=%s hash='%s'", who, freespace, needSpace, thisAmount, pages, blocksize, ovfh.Hash)
 
-		/*
-		if newbodysize < 4*1024*1024 { // < 4M
-			pages, blocksize = 1, "4K" // grow by 4K
-		} else if newbodysize >= 4*1024*1024 && newbodysize < 128*1024*1024 {  // 4M - 128M
-			pages, blocksize = 4, "4K" // grow by 16K
-		} else if newbodysize >= 128*1024*1024 && newbodysize < 1024*1024*1024 { // 128M - 1G
-			pages, blocksize = 8, "4K" // grow by 64K
-		} else if newbodysize >= 1024*1024*1024 { // > 1G
-			pages, blocksize = 1, "128K" // grow by 128K
+		if pages == 1 {
+			pages, blocksize = 1, "128K"
+			/*
+			if newbodysize < 256*1024 {
+				// < 256K
+				pages, blocksize = 1, "4K"
+				// grow by 4K
+
+			} else if newbodysize >= 256*1024 && newbodysize < 1*1024*1024 {
+				// 256K - 1M
+				pages, blocksize = 2, "4K"
+				// grow by 8K
+
+			} else if newbodysize >= 1*1024*1024 && newbodysize < 4*1024*1024 {
+				// 1M - 4M
+				pages, blocksize = 4, "4K"
+				// grow by 16K
+
+			} else if newbodysize >= 4*1024*1024 && newbodysize < 128*1024*1024 {
+				// 4M - 128M
+				pages, blocksize = 8, "4K"
+				// grow by 32K
+
+			} else if newbodysize >= 128*1024*1024 && newbodysize < 1024*1024*1024 {
+				// 128M - 1G
+				pages, blocksize = 16, "4K"
+				// grow by 64K
+
+			} else if newbodysize >= 1024*1024*1024 {
+				// > 1G
+				pages, blocksize = 1, "128K"
+				// grow by 128K
+			}
+			*/
 		}
-		*/
+		log.Printf("GROW OVERVIEW free=%d need=%t=%d pages=%d bs=%s hash='%s' nbs=%d", freespace, needSpace, thisAmount, pages, blocksize, ovfh.Hash, newbodysize)
+
 		new_ovfh, err = Grow_ov(who, ovfh, pages, blocksize, 0, delete)
 		if err != nil || new_ovfh == nil || new_ovfh.Mmap_handle == nil || len(new_ovfh.Mmap_handle) == 0 {
 			//overflow_err := fmt.Errorf("%s ERROR Write_ovfh -> Grow_ov err='%v' newsize=%d avail=%d mmap_size=%d fp='%s' mmaphandle=%d", who, err, newbodysize, freespace, new_ovfh.Mmap_size, filepath.Base(new_ovfh.File_path), len(new_ovfh.Mmap_handle)) // fix nil pointer
