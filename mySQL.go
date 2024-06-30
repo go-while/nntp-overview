@@ -123,6 +123,36 @@ func MsgIDhash2mysql(messageidhash string, size int, db *sql.DB) (bool, error) {
 	return false, fmt.Errorf("ERROR overview.MsgIDhash2mysql() uncatched return")
 } // end func MsgIDhash2mysql
 
+func MsgIDhash2mysqlStat(messageidhash string, stat string, db *sql.DB) (bool, error) {
+	if len(stat) != 1 {
+		return false, fmt.Errorf("ERROR overview.MsgIDhash2mysqlStat len(stat)=%d != 1", len(stat))
+	}
+
+	//tablename := "h_"+string(messageidhash[0:2])
+	//query := "INSERT INTO h_"+string(messageidhash[0:2])+" (hash, fsize) VALUES (?,?)"
+	stmt, err := db.Prepare("INSERT INTO h_"+string(messageidhash[0:3])+" (hash, stat) VALUES (?,?)"); // printhashsql cut first N chars
+	if err != nil {
+		log.Printf("ERROR overview.MsgIDhash2mysqlStat db.Prepare() err='%v'", err)
+		return false, err
+	}
+	defer stmt.Close()
+	if res, err := stmt.Exec(messageidhash[3:], stat); err != nil { // printhashsql cut first N chars
+		//log.Printf("ERROR overview.MsgIDhash2mysqlStat stmt.Exec() err='%v'", err)
+		return false, err
+	} else {
+		if rowCnt, err := res.RowsAffected(); err != nil {
+			log.Printf("ERROR overview.MsgIDhash2mysqlStat res.RowsAffected() err='%v'", err)
+			return false, err
+		} else {
+			if rowCnt == 1 {
+				return true, nil // inserted
+			}
+			return false, nil // duplicate
+		}
+	}
+	return false, fmt.Errorf("ERROR overview.MsgIDhash2mysqlStat() uncatched return")
+} // end func MsgIDhash2mysqlStat
+
 func MsgIDhash2mysqlMany(key string, list []Msgidhash_item, db *sql.DB, tried int) (bool, error) {
 	if len(list) == 0 {
 		return false, fmt.Errorf("ERROR overview.MsgIDhash2mysqlMany key=%s list empty", key)
@@ -195,6 +225,28 @@ func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, string, error
 		drop = true
 	}
 	return true, drop, stat.String, nil
+} // end func IsMsgidHashSQL
+
+func IsMsgidSQL(messageid string, db *sql.DB) (bool, bool, string, error) {
+
+	if len(messageid) <= 0 { // printhashsql
+		return false, false, "", fmt.Errorf("ERROR overview.IsMsgidSQL len(messageid) <= 0")
+	}
+	var stat sql.NullString
+	if err := db.QueryRow("SELECT stat FROM `CONCAT('h_',SUBSTRING(SHA2(?,256),1,3))` WHERE hash = SHA2(?,256) LIMIT 1", messageid, messageid).Scan(&stat); err != nil { // printhashsql cut first N chars
+		if err == sql.ErrNoRows {
+			return false, false, "", nil
+		}
+		log.Printf("ERROR overview.IsMsgidSQL err='%v'", err)
+		return false, false, "", err
+	}
+	var drop bool
+	if stat.Valid && len(stat.String) == 1 {
+		drop = true
+	}
+	return true, drop, stat.String, nil
+} // end func IsMsgidHashSQL
+
 	/*
 	if hash == messageidhash[3:] { // printhashsql cut first N chars
 		var drop bool
@@ -207,7 +259,7 @@ func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, string, error
 				// abuse takedown
 				drop = true
 			case "b":
-				// banned
+				// banned / no accepted newsgroups
 				drop = true
 			case "c":
 				// cancel
@@ -227,6 +279,9 @@ func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, string, error
 			case "n":
 				// nocem
 				drop = true
+			case "o":
+				// bad header overview checksum
+				drop = true
 			case "p":
 				// filtered by pyClean
 				drop = true
@@ -236,13 +291,18 @@ func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, string, error
 			case "s":
 				// filtered by spam assasin
 				drop = true
+			case "x":
+				// crosspost
+				drop = true
+			case "z":
+				// proxy binary filter
+				drop = true
 		}
 
 		return true, drop, stat.String, nil
 	}
 	return false, false, "", fmt.Errorf("ERROR overview.IsMsgidHashSQL() uncatched return")
 	*/
-} // end func IsMsgidHashSQL
 
 func ProcessHash2sql(dbh *sql.DB, hash2sql *chan map[string][]Msgidhash_item, donechan *chan struct{}, sqldonechan *chan struct{}, sqlparchan *chan struct{}, wg *sync.WaitGroup) {
 	defer dbh.Close()
