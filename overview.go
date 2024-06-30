@@ -2617,6 +2617,7 @@ func ParseHeaderKeys(head *[]string, laxmid bool) (headermap map[string][]string
 	keysorder = []string{}
 	for i, line := range *head {
 		if len(line) < 2 {
+			log.Printf("WARN Error ParseHeaderKeys: Header attribute expected i=%d head=%d line='%s'", i, len(*head), line)
 			return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: Header attribute expected i=%d head=%d line='%s'", i, len(*head), line)
 		}
 		if isspace(line[0]) && key != "" {
