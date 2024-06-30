@@ -325,10 +325,12 @@ func OV_AutoIndex() {
 	} // end for
 } // end func OV_Indexer
 
-func ReOrderOverview(file string, group string) bool {
+func ReOrderOverview(file string, group string, doWritestamps bool) bool {
+	/*
 	if strings.HasSuffix(group, ".test") {
 		return false
 	}
+	*/
 	debug := false
 	newfile := file + ".new"
 	if utils.FileExists(newfile) {
@@ -429,6 +431,7 @@ readlines:
 	//l := len(unixstamps)
 	var new_msgnum uint64 = 1
 	var writeLines []string
+	var writestamps []string
 	for _, timestamp := range unixstamps {
 		//log.Printf("ReOrderOV timestamp=%d i=%d/l=%d", timestamp, i, l)
 		if debug && len(mapdata[timestamp]) > 1 {
@@ -444,11 +447,14 @@ readlines:
 			from := datafields[2]
 			date := datafields[3]
 			msgid := datafields[4]
+			if doWritestamps {
+				writestamps = append(writestamps, fmt.Sprintf("%d %s", timestamp, utils.Hash256(datafields[4])))
+			}
 			//xref := ""
-			full_xref_str := datafields[8]
+			//full_xref_str := datafields[8]
 			var new_xrefs []string
 			// check xrefs
-			xrefs := strings.Split(full_xref_str, " ")
+			xrefs := strings.Split(datafields[8], " ")
 			// first xref has to be nntp, then group:n
 			if len(xrefs) >= 2 && xrefs[0] == "nntp" {
 				// loop over all xrefs we have
@@ -498,7 +504,7 @@ readlines:
 			doLimitBytes := false
 			if doLimitBytes {
 				bytes := utils.Str2uint64(datafields[6])
-				var limit_bytes uint64 = 1024 * 1024
+				var limit_bytes uint64 = 1024 * 1024 // hardcoded 1M
 				if bytes > limit_bytes {
 					log.Printf("ReOrderOV IGNORED msgid='%s' bytes=%d", msgid, bytes)
 					continue
@@ -521,6 +527,20 @@ readlines:
 	if len(header) <= 0 || len(header) > 128 || len(footer) != 3 {
 		log.Printf("Error OV ReOrderOverview head=%d foot=%d file='%s'", len(header), len(footer), filepath.Base(file))
 		return false
+	}
+	if len(writestamps) > 0 {
+		newfh, err := os.Create(newfile+".stamps")
+		if err != nil {
+			log.Printf("Error OV ReOrderOverview writestamps os.Create(newfile='%s') err='%v'", filepath.Base(newfile), err)
+			return false
+		}
+		defer newfh.Close()
+		for _, line := range writestamps {
+			if line == "" {
+				return false
+			}
+			fmt.Fprintf(newfh, "%s\n", line)
+		}
 	}
 	if len(writeLines) > 0 {
 		newfh, err := os.Create(newfile)
