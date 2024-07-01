@@ -28,6 +28,11 @@ func (km *Known_MessageIDs) SetKnown(msgidhash string) bool {
 	 */
 	retval := false
 	km.mux.Lock()
+	if km.v == nil {
+		log.Printf("ERROR OVERVIEW SetKnown km.v nil")
+		km.mux.Unlock()
+		return false
+	}
 	if !km.v[msgidhash] { // msgidhash is false == not in map
 		if len(km.v) == km.MAP_MSGIDS { // map is full, drop one from store in slice 'l'
 			for {
@@ -35,6 +40,7 @@ func (km *Known_MessageIDs) SetKnown(msgidhash string) bool {
 					break
 				}
 				clear_msgid := km.l[0] // fetch oldest entry
+				km.l[0] = ""           // forget
 				km.l = km.l[1:]        // and shift slice
 				if km.v[clear_msgid] {
 					delete(km.v, clear_msgid) // delete oldest from map
