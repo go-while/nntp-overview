@@ -2306,8 +2306,13 @@ func Scan_Overview(file string, group string, a uint64, b uint64, fields string,
 		offset = OVIndex.ReadOverviewIndex(index, group, a, b)
 	}
 
-	if a < 1 {
-		return nil, fmt.Errorf("Error Scan_Overview a < 1")
+	if a < 0 {
+		if conn != nil {
+			if err := sendlineOV("502 a < 0"+CRLF, conn, txb); err != nil {
+				return nil, err
+			}
+		}
+		return nil, fmt.Errorf("Error Scan_Overview a < 0")
 	}
 	//to_end := false
 	if b == 0 {
@@ -2428,8 +2433,9 @@ forfilescanner:
 			log.Printf("Error Scan_Overview file='%s' lc=%d field[4] err='!isvalidmsgid'", filepath.Base(file), lc)
 			break
 		}
-		// view-filter
-		if fields == "all" && strings.HasSuffix(datafields[4], "googlegroups.com>") {
+
+		// view-filter TODO hardcoded
+		if conn != nil && fields == "all" && strings.HasSuffix(datafields[4], "googlegroups.com>") && (strings.HasPrefix(datafields[4],"=?UTF-8")||strings.HasPrefix(datafields[4]," =?UTF-8")) {
 			continue forfilescanner
 		}
 
