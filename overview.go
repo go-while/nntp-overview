@@ -32,7 +32,7 @@ const (
 
 	SIZEOF_FOOT     int = 7
 	OVL_CHECKSUM    int = 5
-	OVERVIEW_FIELDS int = 9
+	OVERVIEW_FIELDS int = 9 // minimum. with latest version is 10
 	OVERVIEW_TABS   int = OVERVIEW_FIELDS - 1
 
 	ZERO_PATTERN  string = "zerofill" // replace this pattern with zero padding
@@ -2394,8 +2394,8 @@ forfilescanner:
 		}
 
 		datafields := strings.Split(line, "\t")
-		if len(datafields) != OVERVIEW_FIELDS {
-			err = fmt.Errorf("Error Scan_Overview lc=%d len(fields)=%d != OVERVIEW_FIELDS=%d file='%s' line='%s'", lc, len(datafields), OVERVIEW_FIELDS, filepath.Base(file), line)
+		if len(datafields) < OVERVIEW_FIELDS {
+			err = fmt.Errorf("Error Scan_Overview lc=%d len(fields)=%d < OVERVIEW_FIELDS=%d file='%s' line='%s'", lc, len(datafields), OVERVIEW_FIELDS, filepath.Base(file), line)
 			log.Printf("%s", err)
 			//return nil, err
 			break forfilescanner
@@ -2597,7 +2597,7 @@ func sendlineOV(line string, conn net.Conn, txb *int) error {
 	return nil
 } // end func sendline
 
-func ParseHeaderKeys(head *[]string, laxmid bool) (headermap map[string][]string, keysorder []string, msgid string, err error) {
+func ParseHeaderKeys(head []string, laxmid bool) (headermap map[string][]string, keysorder []string, msgid string, err error) {
 	/*  RFC 5322 section 2.2:
 	Header fields are lines beginning with a field name, followed by a
 	colon (":"), followed by a field body, and terminated by CRLF.
@@ -2617,20 +2617,40 @@ func ParseHeaderKeys(head *[]string, laxmid bool) (headermap map[string][]string
 	if head == nil {
 		return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: head=nil")
 	}
+
 	key := ""
 	//msgid = ""
 	headermap = make(map[string][]string)
 	keysorder = []string{}
-	for i, line := range *head {
+	ignore_nextline := false
+	for i, line := range head {
 		if len(line) < 2 {
-			log.Printf("WARN Error ParseHeaderKeys: Header attribute expected i=%d head=%d line='%s'", i, len(*head), line)
-			return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: Header attribute expected i=%d head=%d line='%s'", i, len(*head), line)
+			log.Printf("WARN Error ParseHeaderKeys: Header attribute expected i=%d head=%d line='%s'", i, len(head), line)
+			return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: Header attribute expected i=%d head=%d line='%s'", i, len(head), line)
 		}
+		spaced_nextline := false
+		nextline := i+1
+		if nextline < len(head)-1 {
+			if head[nextline] != "" {
+				//str_nextline = head[nextline] // next line as string
+				spaced_nextline = isspace(head[nextline][0]) // first char of next line
+			}
+		}
+
+		if ignore_nextline {
+			if spaced_nextline {
+				ignore_nextline = true
+			} else {
+				ignore_nextline = false
+			}
+			continue
+		}
+
 		if isspace(line[0]) && key != "" {
 			headermap[key] = append(headermap[key], line)
 			continue
 		} else if isspace(line[0]) && key == "" {
-			return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: Unexpected continuation of a header somehow missed line='%s' i=%d head=%d key='%s'", line, i, len(*head), key)
+			return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys: Unexpected continuation of a header somehow missed line='%s' i=%d head=%d key='%s'", line, i, len(head), key)
 		}
 		k := strings.Index(line, ":")
 		if k < 1 {
@@ -2666,16 +2686,23 @@ func ParseHeaderKeys(head *[]string, laxmid bool) (headermap map[string][]string
 	for key, values := range headermap {
 		if strings.ToLower(key) == "message-id" {
 			if len(values) > 0 {
-				msgid = values[0]
+				if len(values) > 1 {
+					msgid = strings.TrimSpace(strings.Join(values, ""))
+				} else {
+					msgid = values[0]
+				}
+
 				msgid_key = key
 				//msgid = strings.Join(values, "")
 				if msgid != "" {
 					msgid, err = GetMessageID(msgid, laxmid)
 					if err != nil || msgid == "" {
-						return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys getMessageID key='%s' val='%v'", key, values)
+						return nil, nil, "", fmt.Errorf("Error ParseHeaderKeys getMessageID key='%s' val='%#v'", key, values)
 					}
 					break
 				}
+			} else {
+				log.Printf("Error ParseHeaderKeys getMessageID key='%s' no value", key)
 			}
 		}
 	}

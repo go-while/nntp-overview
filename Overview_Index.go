@@ -325,7 +325,7 @@ func OV_AutoIndex() {
 	} // end for
 } // end func OV_Indexer
 
-func ReOrderOverview(file string, group string, doWritestamps bool) bool {
+func ReOrderOverview(file string, group string, doWritestamps bool, hashdb *sql.DB) bool {
 	/*
 	if strings.HasSuffix(group, ".test") {
 		return false
@@ -358,6 +358,7 @@ func ReOrderOverview(file string, group string, doWritestamps bool) bool {
 	var header string
 	var footer []string
 	var readfooter bool
+	spamfilter := &SPAMFILTER{}
 readlines:
 	for i, line := range lines {
 		if line == "" {
@@ -382,8 +383,8 @@ readlines:
 		}
 
 		datafields := strings.Split(line, "\t")
-		if len(datafields) != OVERVIEW_FIELDS {
-			log.Printf("Error OV ReOrderOverview file='%s' len(datafields)=%d != OVERVIEW_FIELDS=%d i=%d", filepath.Base(file), len(datafields), OVERVIEW_FIELDS, i)
+		if len(datafields) < OVERVIEW_FIELDS {
+			log.Printf("Error OV ReOrderOverview file='%s' len(datafields)=%d < OVERVIEW_FIELDS=%d i=%d", filepath.Base(file), len(datafields), OVERVIEW_FIELDS, i)
 			return false
 		}
 
@@ -450,12 +451,13 @@ readlines:
 			if doWritestamps {
 				writestamps = append(writestamps, fmt.Sprintf("%d %s", timestamp, utils.Hash256(datafields[4])))
 			}
+
 			//xref := ""
 			//full_xref_str := datafields[8]
 			var new_xrefs []string
 			// check xrefs
 			xrefs := strings.Split(datafields[8], " ")
-			// first xref has to be nntp, then group:n
+			// first xref has to be "nntp", then group:n
 			if len(xrefs) >= 2 && xrefs[0] == "nntp" {
 				// loop over all xrefs we have
 			loop_xrefs:
@@ -479,6 +481,7 @@ readlines:
 					new_xrefs = append(new_xrefs, fmt.Sprintf("%s:%d", xrefgroup, new_msgnum))
 				}
 			}
+
 			//parsedTime := time.Unix(timestamp, 0)
 			//rfc5322date := parsedTime.Format(time.RFC1123Z)
 			//date := rfc5322date
@@ -489,22 +492,27 @@ readlines:
 				}
 			}
 
-			/*
-			if spamfilter(subj, "subj", msgid) {
+
+			if spamfilter.Spamfilter(subj, "subj", msgid) {
 				log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'subj'", msgid)
+				if hashdb != nil {
+					MsgIDhash2mysqlStat(utils.Hash256(msgid), "r", hashdb)
+				}
 				continue
 			}
 
-			if spamfilter(from, "from", msgid) {
+			if spamfilter.Spamfilter(from, "from", msgid) {
 				log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'from'", msgid)
+				if hashdb != nil {
+					MsgIDhash2mysqlStat(utils.Hash256(msgid), "r", hashdb)
+				}
 				continue
 			}
-			*/
 
-			doLimitBytes := false
+			doLimitBytes := false  // hardcoded flag
 			if doLimitBytes {
 				bytes := utils.Str2uint64(datafields[6])
-				var limit_bytes uint64 = 1024 * 1024 // hardcoded 1M
+				var limit_bytes uint64 = 256 * 1024 // hardcoded 256K
 				if bytes > limit_bytes {
 					log.Printf("ReOrderOV IGNORED msgid='%s' bytes=%d", msgid, bytes)
 					continue
@@ -515,7 +523,13 @@ readlines:
 			for x := 0; x < len(new_xrefs); x++ {
 				new_xref = new_xref + " " + new_xrefs[x]
 			}
-			newline := fmt.Sprintf("%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", new_msgnum, subj, from, date, msgid, datafields[5], datafields[6], datafields[7], new_xref)
+
+			flags := "_"
+			if len(datafields) == 10 {
+				flags = datafields[9]
+			}
+
+			newline := fmt.Sprintf("%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", new_msgnum, subj, from, date, msgid, datafields[5], datafields[6], datafields[7], new_xref, flags)
 			writeLines = append(writeLines, newline)
 			if debug {
 				log.Printf("newline='%s'", newline)

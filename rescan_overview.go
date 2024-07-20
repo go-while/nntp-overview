@@ -314,8 +314,8 @@ rescan_OV:
 
 				fields = strings.Split(line, "\t")
 				len_fields := len(fields)
-				if len_fields != OVERVIEW_FIELDS {
-					log.Printf("ERROR Rescan_OV#3 @line=%d newlines=%d fields=%d!=%d tabs=%d startindex=%d position=%d line='%s'", lines, newlines, len_fields, OVERVIEW_FIELDS, tabs, startindex, position, line)
+				if len_fields < OVERVIEW_FIELDS {
+					log.Printf("ERROR Rescan_OV#3 @line=%d newlines=%d fields=%d<%d tabs=%d startindex=%d position=%d line='%s'", lines, newlines, len_fields, OVERVIEW_FIELDS, tabs, startindex, position, line)
 					return false, 0
 				}
 				lines++ // raise overview line counter
