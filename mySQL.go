@@ -130,13 +130,13 @@ func MsgIDhash2mysqlStat(messageidhash string, stat string, db *sql.DB) (bool, e
 
 	//tablename := "h_"+string(messageidhash[0:2])
 	//query := "INSERT INTO h_"+string(messageidhash[0:2])+" (hash, fsize) VALUES (?,?)"
-	stmt, err := db.Prepare("INSERT INTO h_"+string(messageidhash[0:3])+" (hash, stat) VALUES (?,?)"); // printhashsql cut first N chars
+	stmt, err := db.Prepare("INSERT INTO h_"+string(messageidhash[0:3])+" (hash, stat) VALUES (?,?) ON DUPLICATE KEY UPDATE stat = ?"); // printhashsql cut first N chars
 	if err != nil {
 		log.Printf("ERROR overview.MsgIDhash2mysqlStat db.Prepare() err='%v'", err)
 		return false, err
 	}
 	defer stmt.Close()
-	if res, err := stmt.Exec(messageidhash[3:], stat); err != nil { // printhashsql cut first N chars
+	if res, err := stmt.Exec(messageidhash[3:], stat, stat); err != nil { // printhashsql cut first N chars
 		//log.Printf("ERROR overview.MsgIDhash2mysqlStat stmt.Exec() err='%v'", err)
 		return false, err
 	} else {
@@ -227,13 +227,14 @@ func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, string, error
 	return true, drop, stat.String, nil
 } // end func IsMsgidHashSQL
 
+/*
 func IsMsgidSQL(messageid string, db *sql.DB) (bool, bool, string, error) {
 
 	if len(messageid) <= 0 { // printhashsql
 		return false, false, "", fmt.Errorf("ERROR overview.IsMsgidSQL len(messageid) <= 0")
 	}
 	var stat sql.NullString
-	if err := db.QueryRow("SELECT stat FROM `CONCAT('h_',SUBSTRING(SHA2(?,256),1,3))` WHERE hash = SHA2(?,256) LIMIT 1", messageid, messageid).Scan(&stat); err != nil { // printhashsql cut first N chars
+	if err := db.QueryRow("SELECT stat FROM xxxxxxxxxxxxxxxxxxxxx`CONCAT('h_',SUBSTRING(SHA2(?,256),1,3))` WHERE hash = SHA2(?,256) LIMIT 1", messageid, messageid).Scan(&stat); err != nil { // printhashsql cut first N chars
 		if err == sql.ErrNoRows {
 			return false, false, "", nil
 		}
@@ -246,62 +247,56 @@ func IsMsgidSQL(messageid string, db *sql.DB) (bool, bool, string, error) {
 	}
 	return true, drop, stat.String, nil
 } // end func IsMsgidHashSQL
+*/
 
 	/*
-	if hash == messageidhash[3:] { // printhashsql cut first N chars
-		var drop bool
-		if stat.Valid {
+	switch stat.String {
+		case "a":
+			// abuse takedown
 			drop = true
-		}
-
-		switch stat.String {
-			case "a":
-				// abuse takedown
-				drop = true
-			case "b":
-				// banned / no accepted newsgroups
-				drop = true
-			case "c":
-				// cancel
-				drop = true
-			case "d":
-				// to delete
-				drop = true
-			case "e":
-				// expired
-				drop = true
-			case "f":
-				// filtered by cleanfeed
-				drop = true
-			case "g":
-				// group removed
-				drop = true
-			case "n":
-				// nocem
-				drop = true
-			case "o":
-				// bad header overview checksum
-				drop = true
-			case "p":
-				// filtered by pyClean
-				drop = true
-			case "r":
-				// removed
-				drop = true
-			case "s":
-				// filtered by spam assasin
-				drop = true
-			case "x":
-				// crosspost
-				drop = true
-			case "z":
-				// proxy binary filter
-				drop = true
-		}
-
-		return true, drop, stat.String, nil
+		case "b":
+			// banned / no accepted newsgroups
+			drop = true
+		case "c":
+			// cancel
+			drop = true
+		case "d":
+			// to delete
+			drop = true
+		case "e":
+			// expired
+			drop = true
+		case "f":
+			// filtered by cleanfeed
+			drop = true
+		case "g":
+			// group removed
+			drop = true
+		case "h":
+			// bad head/body
+			drop = true
+		case "n":
+			// nocem
+			drop = true
+		case "o":
+			// bad header overview checksum
+			drop = true
+		case "p":
+			// filtered by pyClean
+			drop = true
+		case "r":
+			// removed by overview spamfilter
+			drop = true
+		case "s":
+			// filtered by spam assasin
+			drop = true
+		case "x":
+			// crosspost
+			drop = true
+		case "z":
+			// proxy/binary filter
+			drop = true
 	}
-	return false, false, "", fmt.Errorf("ERROR overview.IsMsgidHashSQL() uncatched return")
 	*/
 
 func ProcessHash2sql(dbh *sql.DB, hash2sql *chan map[string][]Msgidhash_item, donechan *chan struct{}, sqldonechan *chan struct{}, sqlparchan *chan struct{}, wg *sync.WaitGroup) {
