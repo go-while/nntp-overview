@@ -340,7 +340,7 @@ func ReOrderOverview(file string, group string, doWritestamps bool, hashdb *sql.
 		return false
 	}
 	if !utils.FileExists(file) {
-		log.Printf("Error ReOrderOverview !FileExists file='%s'", file)
+		log.Printf("Error ReOrderOverview !FileExists file='%s' group='%s'", file, group)
 		return false
 	}
 	var a, b uint64
@@ -433,6 +433,7 @@ readlines:
 	var new_msgnum uint64 = 1
 	var writeLines []string
 	var writestamps []string
+	var useSpamfilter bool = false
 	for _, timestamp := range unixstamps {
 		//log.Printf("ReOrderOV timestamp=%d i=%d/l=%d", timestamp, i, l)
 		if debug && len(mapdata[timestamp]) > 1 {
@@ -474,7 +475,7 @@ readlines:
 
 					xrefgroup := xrefdata[0]
 					if group != xrefgroup {
-						log.Printf("WARN ReOrderOV IGNORE xrefgroup='%s' msgid='%s'", xrefgroup, msgid)
+						//log.Printf("WARN ReOrderOV IGNORE xrefgroup='%s' group='%s' msgid='%s'", xrefgroup, group, msgid)
 						continue loop_xrefs
 					}
 
@@ -493,43 +494,49 @@ readlines:
 			}
 
 
-			if spamfilter.Spamfilter(subj, "subj", msgid) {
-				log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'subj'", msgid)
-				if hashdb != nil {
-					MsgIDhash2mysqlStat(utils.Hash256(msgid), "r", hashdb)
-				}
-				continue
-			}
+			if useSpamfilter {
 
-			if spamfilter.Spamfilter(from, "from", msgid) {
-				log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'from'", msgid)
-				if hashdb != nil {
-					MsgIDhash2mysqlStat(utils.Hash256(msgid), "r", hashdb)
-				}
-				continue
-			}
-
-			doLimitBytes := false  // hardcoded flag
-			if doLimitBytes {
-				bytes := utils.Str2uint64(datafields[6])
-				var limit_bytes uint64 = 256 * 1024 // hardcoded 256K
-				if bytes > limit_bytes {
-					log.Printf("ReOrderOV IGNORED msgid='%s' bytes=%d", msgid, bytes)
+				if spamfilter.Spamfilter(subj, "subj", msgid) {
+					//log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'subj'='%s'", msgid, subj)
+					if hashdb != nil {
+						MsgIDhash2mysqlStat(utils.Hash256(msgid), "r", hashdb)
+					}
 					continue
 				}
-			}
 
+				if spamfilter.Spamfilter(from, "from", msgid) {
+					//log.Printf("ReOrderOV IGNORED msgid='%s' spamfilter 'from'='%s'", msgid, from)
+					if hashdb != nil {
+						MsgIDhash2mysqlStat(utils.Hash256(msgid), "r", hashdb)
+					}
+					continue
+				}
+
+				doLimitBytes := false  // hardcoded flag
+				if doLimitBytes {
+					bytes := utils.Str2uint64(datafields[6])
+					var limit_bytes uint64 = 256 * 1024 // hardcoded 256K
+					if bytes > limit_bytes {
+						log.Printf("ReOrderOV IGNORED msgid='%s' bytes=%d", msgid, bytes)
+						continue
+					}
+				}
+
+			}
 			new_xref := "nntp"
 			for x := 0; x < len(new_xrefs); x++ {
 				new_xref = new_xref + " " + new_xrefs[x]
 			}
 
+			/*
 			flags := "_"
 			if len(datafields) == 10 {
 				flags = datafields[9]
 			}
+			*/
 
-			newline := fmt.Sprintf("%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", new_msgnum, subj, from, date, msgid, datafields[5], datafields[6], datafields[7], new_xref, flags)
+			//newline := fmt.Sprintf("%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", new_msgnum, subj, from, date, msgid, datafields[5], datafields[6], datafields[7], new_xref, flags)
+			newline := fmt.Sprintf("%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s", new_msgnum, subj, from, date, msgid, datafields[5], datafields[6], datafields[7], new_xref)
 			writeLines = append(writeLines, newline)
 			if debug {
 				log.Printf("newline='%s'", newline)
@@ -543,17 +550,17 @@ readlines:
 		return false
 	}
 	if len(writestamps) > 0 {
-		newfh, err := os.Create(newfile+".stamps")
+		newfhs, err := os.Create(newfile+".stamps")
 		if err != nil {
 			log.Printf("Error OV ReOrderOverview writestamps os.Create(newfile='%s') err='%v'", filepath.Base(newfile), err)
 			return false
 		}
-		defer newfh.Close()
+		defer newfhs.Close()
 		for _, line := range writestamps {
 			if line == "" {
-				return false
+				continue
 			}
-			fmt.Fprintf(newfh, "%s\n", line)
+			fmt.Fprintf(newfhs, "%s\n", line)
 		}
 	}
 	if len(writeLines) > 0 {
