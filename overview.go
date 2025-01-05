@@ -84,12 +84,14 @@ var (
 	// The date format layouts to try
 	NNTPDateLayoutsExtended = []string{
 
-		"Monday, _2 Jan 2006 15:04:05 -0700",
 		"Monday, _2 Jan 2006 15:04:05 -0700 (MST)",
+		"Monday, _2 Jan 2006 15:04:05 -0700",
+		"Monday, _2 Jan 2006 15:04:05 --0700",
 		"Monday, _2 Jan 2006 15:04:05 MST",
 		"Monday, _2 Jan 2006 15:04:05",
 		"Monday, _2 Jan 2006 15:04",
 		"Monday, _2 Jan 2006",
+		"Monday, _2 January 2006 15:04:05 --0700",
 		"Monday, _2 January 2006 15:04:05 -0700",
 		"Monday, _2 January 2006 15:04:05 -0700 (MST)",
 		"Monday, _2 January 2006 15:04:05 MST",
@@ -98,25 +100,29 @@ var (
 		"Monday, _2 January 2006",
 
 		"Monday, _2 Jan 06 15:04:05 -0700 (MST)",
+		"Monday, _2 Jan 06 15:04:05 --0700",
 		"Monday, _2 Jan 06 15:04:05 -0700",
 		"Monday, _2 Jan 06 15:04:05 MST",
 		"Monday, _2 Jan 06 15:04:05",
 		"Monday, _2 Jan 06 15:04",
 		"Monday, _2 Jan 06",
 		"Monday, _2 January 06 15:04:05 -0700 (MST)",
+		"Monday, _2 January 06 15:04:05 --0700",
 		"Monday, _2 January 06 15:04:05 -0700",
 		"Monday, _2 January 06 15:04:05 MST",
 		"Monday, _2 January 06 15:04:05",
 		"Monday, _2 January 06 15:04",
 		"Monday, _2 January 06",
 
-		"Mon, _2 Jan 2006 15:04:05 -0700",
 		"Mon, _2 Jan 2006 15:04:05 -0700 (MST)",
+		"Mon, _2 Jan 2006 15:04:05 --0700",
+		"Mon, _2 Jan 2006 15:04:05 -0700",
 		"Mon, _2 Jan 2006 15:04:05 MST",
 		"Mon, _2 Jan 2006 15:04:05",
 		"Mon, _2 Jan 2006 15:04 -0700",
 		"Mon, _2 Jan 2006 15:04",
 		"Mon, _2 Jan 2006",
+		"Mon, _2 January 2006 15:04:05 --0700",
 		"Mon, _2 January 2006 15:04:05 -0700",
 		"Mon, _2 January 2006 15:04:05 -0700 (MST)",
 		"Mon, _2 January 2006 15:04:05 MST",
@@ -126,12 +132,14 @@ var (
 		"Mon, _2 January 2006",
 		// Tue, 22 Feb 94 06:15:56 Mst
 		"Mon, _2 Jan 06 15:04:05 -0700 (MST)",
+		"Mon, _2 Jan 06 15:04:05 --0700",
 		"Mon, _2 Jan 06 15:04:05 -0700",
 		"Mon, _2 Jan 06 15:04:05 MST",
 		"Mon, _2 Jan 06 15:04:05",
 		"Mon, _2 Jan 06 15:04",
 		"Mon, _2 Jan 06",
 		"Mon, _2 January 06 15:04:05 -0700 (MST)",
+		"Mon, _2 January 06 15:04:05 --0700",
 		"Mon, _2 January 06 15:04:05 -0700",
 		"Mon, _2 January 06 15:04:05 MST",
 		"Mon, _2 January 06 15:04:05",
@@ -139,13 +147,16 @@ var (
 		"Mon, _2 January 06",
 
 		"_2 Jan 2006 15:04:05 -0700 (MST)",
+		"_2 Jan 2006 15:04:05 --0700",
 		"_2 Jan 2006 15:04:05 -0700",
 		"_2 Jan 2006 15:04:05 MST",
 		"_2 Jan 2006 15:04:05",
+		"_2 Jan 2006 15:04 -0700 (MST)",
 		"_2 Jan 2006 15:04 MST",
 		"_2 Jan 2006 15:04",
 		"_2 Jan 2006",
 		"_2 January 2006 15:04:05 -0700 (MST)",
+		"_2 January 2006 15:04:05 --0700",
 		"_2 January 2006 15:04:05 -0700",
 		"_2 January 2006 15:04:05 MST",
 		"_2 January 2006 15:04:05",
@@ -154,12 +165,14 @@ var (
 		"_2 January 2006",
 
 		"_2 Jan 06 15:04:05 -0700 (MST)",
+		"_2 Jan 06 15:04:05 --0700",
 		"_2 Jan 06 15:04:05 -0700",
 		"_2 Jan 06 15:04:05 MST",
 		"_2 Jan 06 15:04:05",
 		"_2 Jan 06 15:04",
 		"_2 Jan 06",
 		"_2 January 06 15:04:05 -0700 (MST)",
+		"_2 January 06 15:04:05 --0700",
 		"_2 January 06 15:04:05 -0700",
 		"_2 January 06 15:04:05 MST",
 		"_2 January 06 15:04:05",
@@ -167,12 +180,14 @@ var (
 		"_2 January 06",
 
 		"Jan _2, 2006 15:04:05 -0700 (MST)",
+		"Jan _2, 2006 15:04:05 --0700",
 		"Jan _2, 2006 15:04:05 -0700",
 		"Jan _2, 2006 15:04:05 MST",
 		"Jan _2, 2006 15:04:05",
 		"Jan _2, 2006 15:04",
 		"Jan _2, 2006",
 		"January _2, 2006 15:04:05 -0700 (MST)",
+		"January _2, 2006 15:04:05 --0700",
 		"January _2, 2006 15:04:05 -0700",
 		"January _2, 2006 15:04:05 MST",
 		"January _2, 2006 15:04:05",
@@ -180,12 +195,14 @@ var (
 		"January _2, 2006",
 
 		"Jan _2, 06 15:04:05 -0700 (MST)",
+		"Jan _2, 06 15:04:05 --0700",
 		"Jan _2, 06 15:04:05 -0700",
 		"Jan _2, 06 15:04:05 MST",
 		"Jan _2, 06 15:04:05",
 		"Jan _2, 06 15:04",
 		"Jan _2, 06",
 		"January _2, 06 15:04:05 -0700 (MST)",
+		"January _2, 06 15:04:05 --0700",
 		"January _2, 06 15:04:05 -0700",
 		"January _2, 06 15:04:05 MST",
 		"January _2, 06 15:04:05",
@@ -277,6 +294,7 @@ var (
 		"_2-Jan-06 15:04 MST",
 		// Date: Tue, 19 Jun 2007 13:09:02 GMT
 		"Date: Tue, _2 Jun 2006 15:04:05 MST",
+		"2006/01/06",
 	}
 	NNTPDateLayouts = NNTPDateLayoutsExtended
 	/*
@@ -2693,7 +2711,6 @@ func ParseHeaderKeys(head []string, laxmid bool) (headermap map[string][]string,
 				}
 
 				msgid_key = key
-				//msgid = strings.Join(values, "")
 				if msgid != "" {
 					msgid, err = GetMessageID(msgid, laxmid)
 					if err != nil || msgid == "" {
@@ -2800,7 +2817,7 @@ func ParseDate(dv string) (unixepoch int64, err error) {
 		if debug {
 			log.Printf("WARN1 OV ParseDate: dv='%s' try extractMatchingText", dv)
 		}
-		/*
+
 		for _, layout := range NNTPDateLayouts {
 			parsedText := extractMatchingText(dv, layout)
 			parsedTime, err = time.Parse(layout, parsedText)
@@ -2812,7 +2829,7 @@ func ParseDate(dv string) (unixepoch int64, err error) {
 			}
 			//log.Printf("Error OV ParseDate: dv='%s' err='%v'", *dv, err)
 		}
-		*/
+
 	}
 
 	if err != nil {
