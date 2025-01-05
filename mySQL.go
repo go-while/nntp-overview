@@ -17,6 +17,8 @@ import (
 var (
 	Psql = 256 // parallel sql threads
 	Flushmax = 4096 // * 16^idx = max cached to flush
+	idx = 3 // hardcoded
+	cs = "0123456789abcdef"
 )
 
 func PrintHashMySQL(printrocksdb bool) {
@@ -27,8 +29,8 @@ func PrintHashMySQL(printrocksdb bool) {
 		fmt.Println("CREATE DATABASE IF NOT EXISTS `msgidhash` DEFAULT CHARACTER SET latin1 COLLATE latin1_bin;")
 	}
 	fmt.Println("USE `msgidhash`;")
-	cs := "0123456789abcdef"
-	idx := 3 // NOTE: to change tables to use idx 1-3 search overview for "printhashsql" and edit all "0:2" and "2:" to 3!
+
+	 // NOTE: to change tables to use idx 1-3 search overview for "printhashsql" and edit all "0:2" and "2:" to 3!
 	for _, c1 := range cs {
 		if idx == 1 {
 			if !printrocksdb {
@@ -99,14 +101,13 @@ func MsgIDhash2mysql(messageidhash string, size int, db *sql.DB) (bool, error) {
 	}
 
 	//tablename := "h_"+string(messageidhash[0:2])
-	//query := "INSERT INTO h_"+string(messageidhash[0:2])+" (hash, fsize) VALUES (?,?)"
-	stmt, err := db.Prepare("INSERT INTO h_"+string(messageidhash[0:3])+" (hash, fsize) VALUES (?,?)"); // printhashsql cut first N chars
+	stmt, err := db.Prepare("INSERT INTO h_"+string(messageidhash[0:idx])+" (hash, fsize) VALUES (?,?)"); // printhashsql cut first N chars
 	if err != nil {
 		log.Printf("ERROR overview.MsgIDhash2mysql db.Prepare() err='%v'", err)
 		return false, err
 	}
 	defer stmt.Close()
-	if res, err := stmt.Exec(messageidhash[3:], size); err != nil { // printhashsql cut first N chars
+	if res, err := stmt.Exec(messageidhash[idx:], size); err != nil { // printhashsql cut first N chars
 		//log.Printf("ERROR overview.MsgIDhash2mysql stmt.Exec() err='%v'", err)
 		return false, err
 	} else {
@@ -130,7 +131,7 @@ func MsgIDhash2mysqlStat(messageidhash string, stat string, db *sql.DB) (bool, e
 
 	//tablename := "h_"+string(messageidhash[0:2])
 	//query := "INSERT INTO h_"+string(messageidhash[0:2])+" (hash, fsize) VALUES (?,?)"
-	stmt, err := db.Prepare("INSERT INTO h_"+string(messageidhash[0:3])+" (hash, stat) VALUES (?,?) ON DUPLICATE KEY UPDATE stat = ?"); // printhashsql cut first N chars
+	stmt, err := db.Prepare("INSERT INTO h_"+string(messageidhash[0:idx])+" (hash, stat) VALUES (?,?) ON DUPLICATE KEY UPDATE stat = ?"); // printhashsql cut first N chars
 	if err != nil {
 		log.Printf("ERROR overview.MsgIDhash2mysqlStat db.Prepare() err='%v'", err)
 		return false, err
@@ -213,7 +214,7 @@ func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, string, error
 		return false, false, "", fmt.Errorf("ERROR overview.IsMsgidHashSQL len(messageidhash) != 64")
 	}
 	var stat sql.NullString
-	if err := db.QueryRow("SELECT stat FROM "+"h_"+string(messageidhash[0:3])+" WHERE hash = ? LIMIT 1", messageidhash[3:]).Scan(&stat); err != nil { // printhashsql cut first N chars
+	if err := db.QueryRow("SELECT stat FROM "+"h_"+string(messageidhash[0:idx])+" WHERE hash = ? LIMIT 1", messageidhash[idx:]).Scan(&stat); err != nil { // printhashsql cut first N chars
 		if err == sql.ErrNoRows {
 			return false, false, "", nil
 		}
@@ -225,6 +226,44 @@ func IsMsgidHashSQL(messageidhash string, db *sql.DB) (bool, bool, string, error
 		drop = true
 	}
 	return true, drop, stat.String, nil
+} // end func IsMsgidHashSQL
+
+func ClearStat(stat string, db *sql.DB) (error) {
+	/*
+	 * SELECT *  FROM `h_00a` WHERE
+	 * 		`stat` is not NULL AND
+	 * 		`stat` != 'b' AND
+	 * 		`stat` != 'z' AND
+	 * 		`stat` != 'x' AND
+	 * 		`stat` != 'o' AND
+	 * 		`stat` != 'h'
+	 * 		ORDER BY `stat` DESC;
+	*/
+	deleted := 0
+	start := utils.UnixTimeMilliSec()
+	for _, c1 := range cs {
+		for _, c2 := range cs {
+			for _, c3 := range cs {
+				table := string(c1)+string(c2)+string(c3)
+				query := "DELETE FROM "+"h_"+table+" WHERE fsize is NULL and stat = "+stat
+				res, err := db.Exec(query)
+				if err != nil {
+					log.Printf("ERROR overview.ClearStat stat='%s' err='%v'", stat, err)
+					return err
+				}
+				rowCnt, err := res.RowsAffected()
+				if err != nil {
+					log.Printf("ERROR overview.ClearStat stat='%s' res.RowsAffected() err='%v'", stat, err)
+					return err
+				}
+				log.Printf("ClearStat stat='%s' table='h_%s%s%s' deleted=%d", stat, table, rowCnt)
+				deleted++
+			}
+		}
+	}
+	took := utils.UnixTimeMilliSec() - start
+	log.Printf("ClearStat stat='%s' deleted=%d took=(%d ms)", stat, deleted, took)
+	return nil
 } // end func IsMsgidHashSQL
 
 /*
@@ -273,7 +312,7 @@ func IsMsgidSQL(messageid string, db *sql.DB) (bool, bool, string, error) {
 			// group removed
 			drop = true
 		case "h":
-			// bad head/body
+			// bad/nil head/body
 			drop = true
 		case "n":
 			// nocem
@@ -294,7 +333,7 @@ func IsMsgidSQL(messageid string, db *sql.DB) (bool, bool, string, error) {
 			// crosspost
 			drop = true
 		case "z":
-			// proxy/binary filter
+			// prefetch/proxy/binary filter
 			drop = true
 	}
 	*/
