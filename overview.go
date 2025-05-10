@@ -762,8 +762,8 @@ func (ov *OV) GO_pi_ov(who string, overviewline string, newsgroup string, hash s
 		ovfh.Last = 1
 	}
 
-	xref := fmt.Sprintf(XREF_PREFIX+" %s:%d", newsgroup, ovfh.Last)
-	ovl_line := fmt.Sprintf("%d\t%s\t%s\n", ovfh.Last, overviewline, xref)
+	//xref := fmt.Sprintf(XREF_PREFIX+" %s:%d", newsgroup, ovfh.Last)
+	ovl_line := fmt.Sprintf("%d\t%s\t%s\n", ovfh.Last, overviewline, "nntp")
 	new_ovfh, err, errstr := Write_ov(who, ovfh, ovl_line, false, false, false, false)
 	if err != nil {
 		log.Printf("who='%s' ERROR GO_pi_ovWrite_ovfh err='%v' errstr='%s'", who, err, errstr)
@@ -2355,7 +2355,7 @@ func Scan_Overview(file string, group string, a uint64, b uint64, fields string,
 			log.Printf("Error Scan_Overview os.Open.Seek fp='%s' offset=%d err='%v'", offset, filepath.Base(file), err)
 			return nil, err
 		}
-		log.Printf("Scan_Overview SEEK fp='%s' a=%d @offset=%d", filepath.Base(file), a, offset)
+		//log.Printf("Scan_Overview SEEK fp='%s' a=%d @offset=%d", filepath.Base(file), a, offset)
 	}
 
 	fileScanner := bufio.NewScanner(readFile)
@@ -2561,7 +2561,7 @@ forfilescanner:
 			}
 		case "msgid":
 			lines = append(lines, datafields[4]) // catches message-id field
-			log.Printf("Scan_Overview returns a=%d b=%d file='%s' msgid='%s'", a, b, filepath.Base(file), datafields[4])
+			//log.Printf("Scan_Overview returns a=%d b=%d file='%s' msgid='%s'", a, b, filepath.Base(file), datafields[4])
 			break forfilescanner
 		default:
 			log.Printf("Error scan_overview unknown *fields=%s", fields)
