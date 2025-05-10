@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	//"time"
+	"time"
 )
 
 func CMD_NewOverviewIndex(file string, group string) bool {
@@ -125,8 +125,6 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file string, group string, a uint64,
 	fileScanner.Split(bufio.ScanLines)
 	lc := 0
 	log.Printf("ReadOverviewIndex groups='%s' SCAN a=%d", group, a)
-	//var prev_xb uint64
-	//var prev_xz int64
 	/*  todo: get rid of x_a and x_y. only need x_b as floored + x_z offset
 	 * 	|x_a|x_b|x_y|x_z
 		|1|100|128|19736|
@@ -199,63 +197,81 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file string, group string, a uint64,
 		}
 
 		// memoryleak? always cache index offsets
+		if a < 100 {
+			OVIndex.SetOVIndexCacheOffset(group, x_a, x_y)
+		}
 		OVIndex.SetOVIndexCacheOffset(group, x_b, x_z)
 
 		if a >= x_a && a <= x_b {
-			// cache previous index offset
-			//if prev_xb > 0 && prev_xz > 0 {
-			//	OVIndex.SetOVIndexCacheOffset(group, prev_xb, prev_xz)
-			//}
-			// cache only index matches
-			//OVIndex.SetOVIndexCacheOffset(group, x_b, x_z)
 			offset = x_y
 			break
 		}
-		//prev_xb = x_b
-		//prev_xz = x_z
 	}
 	return offset
 } // end func ReadOverviewIndex
 
 type OverviewIndex struct {
-	mux            sync.Mutex
-	IndexMap       map[string]map[uint64]int64 // data[group][msgnum]offset
-	IndexCache     []string                    // rotating list with cached index groups
-	IndexCacheSize int                         // number of groups we cache an index for
+	mux               sync.Mutex
+	IndexMap          map[string]map[uint64]CachedOffset // data[group][msgnum]offset
+	IndexCache        []string                    // rotating list with cached index groups
+	IndexCacheSize    int                         // number of groups we cache an index for
+	IndexSubCacheSize int                         // number of offsets we cache for groups
+}
+
+type CachedOffset struct {
+	Offset    int64
+	Created   int64
 }
 
 func (ovi *OverviewIndex) SetOVIndexCacheOffset(group string, fnum uint64, offset int64) {
 	log.Printf("SetOVIndexCacheOffset group='%s' fnum=%d offset=%d", group, fnum, offset)
-	ovi.IndexCacheSize = 4096 // *hardcoded* keeps indexed offsets for this amount of groups in cache
+	ovi.IndexCacheSize = 4096 // *hardcoded*groups*
+	ovi.IndexSubCacheSize = 4096 // *hardcoded*offsets*per*group*
+	// 4k*4k*16b?~256M? memory usage (theoreticaly... we're in go ;))
 
 	ovi.mux.Lock()
 	if ovi.IndexMap == nil {
-		ovi.IndexMap = make(map[string]map[uint64]int64, ovi.IndexCacheSize)
+		ovi.IndexMap = make(map[string]map[uint64]CachedOffset, ovi.IndexCacheSize)
 	}
 	if ovi.IndexMap[group] == nil {
-		// memoryleak! map without limit caches infinite amount of index offsets for group
-		ovi.IndexMap[group] = make(map[uint64]int64)
+		// TODO an expiry process?
+		ovi.IndexMap[group] = make(map[uint64]CachedOffset, ovi.IndexSubCacheSize)
 	}
 
-	// check if map is full
+	// check if IndexCache map is full
 	if len(ovi.IndexMap) == ovi.IndexCacheSize {
-		delgroup := ovi.IndexCache[0]
+		delgroup := ovi.IndexCache[0] // clear from cache
 		ovi.IndexCache = ovi.IndexCache[1:] // pops [0]
 		if delgroup != group {
 			delete(ovi.IndexMap, delgroup)
 		} else {
-			ovi.IndexCache = append(ovi.IndexCache, delgroup) // re-append to top
+			// looks like group was in use before
+			ovi.IndexCache = append(ovi.IndexCache, group) // re-append to end
 		}
 	}
-	ovi.IndexMap[group][fnum] = offset
+
+	// check if IndexSubCache map with offsets is full
+	if len(ovi.IndexMap[group]) == ovi.IndexSubCacheSize {
+		for k := range ovi.IndexMap[group] {
+			// randomly drops 1 fnum:offset entry
+			delete(ovi.IndexMap[group],k); break;
+		}
+	}
+
+	// TODO great idea to have a timestamp with every offset
+	// but offsets (mostly) are smaller than a unix timestamp...
+	// memoryfootprint++
+	ovi.IndexMap[group][fnum] = CachedOffset { Offset: offset, Created: time.Now().Unix() }
 	ovi.IndexCache = append(ovi.IndexCache, group)
 	ovi.mux.Unlock()
 } // end func SetOVIndexCacheOffset
 
 func (ovi *OverviewIndex) GetOVIndexCacheOffset(group string, a uint64) (offset int64) {
+	/*
 	if a < 100 {
 		return
 	}
+	*/
 	// offets are created for every 100 messages in overview
 	// 1|100|offset1|offset2
 	// 101|200|offset1|offset2
@@ -277,9 +293,12 @@ func (ovi *OverviewIndex) GetOVIndexCacheOffset(group string, a uint64) (offset 
 		return
 	}
 
-	if ovi.IndexMap[group][floored] > 0 {
-		offset = ovi.IndexMap[group][floored]
+	if ovi.IndexMap[group][floored].Offset > 0 {
+		offset = ovi.IndexMap[group][floored].Offset
 		log.Printf("OK GetOVIndexCacheOffset group='%s' a=%d f=%d @offset=%d", group, a, floored, offset)
+	} else {
+		log.Printf("NO GetOVIndexCacheOffset group='%s' a=%d f=%d", group, a, floored)
+
 	}
 	return
 } // func GetOVIndexCacheOffset
@@ -290,7 +309,7 @@ func (ovi *OverviewIndex) MemDropIndexCache(group string, fnum uint64) {
 	defer ovi.mux.Unlock()
 	if group == "" {
 		// drop all cached index offsets
-		ovi.IndexMap = make(map[string]map[uint64]int64, ovi.IndexCacheSize)
+		ovi.IndexMap = make(map[string]map[uint64]CachedOffset, ovi.IndexCacheSize)
 		ovi.IndexCache = []string{}
 	} else {
 		// drop index cache for group
@@ -298,7 +317,7 @@ func (ovi *OverviewIndex) MemDropIndexCache(group string, fnum uint64) {
 		case 0:
 			// fnum is not set
 			// memoryleak! map without limit caches infinite amount of index offsets for group
-			ovi.IndexMap[group] = make(map[uint64]int64)
+			ovi.IndexMap[group] = make(map[uint64]CachedOffset)
 		default:
 			if fnum > 0 {
 				delete(ovi.IndexMap[group], fnum)
