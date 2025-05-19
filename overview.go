@@ -448,7 +448,7 @@ func (ov *OV) Load_Overview(maxworkers int, max_queue_size int, max_open_mmaps i
 		if known_messageids > 0 { // setup known_messageids map only if we want to
 			log.Printf("Load_Overview: cache known_messageids=%d", known_messageids)
 			Known_msgids = Known_MessageIDs{
-				v:          make(map[string]bool, known_messageids),
+				v:          make(map[string]int64, known_messageids),
 				Debug:      debug_OV_handler,
 				MAP_MSGIDS: known_messageids,
 			}
@@ -2319,9 +2319,8 @@ func Scan_Overview(file string, group string, a uint64, b uint64, fields string,
 	}
 	var offset int64
 
-	if group != "" {
-		index := fmt.Sprintf("%s.Index", file)
-		offset = OVIndex.ReadOverviewIndex(index, group, a, b)
+	if fields != "NewOVI" && fields != "ReOrderOV" && group != "" && a >= 100 {
+		offset = OVIndex.ReadOverviewIndex(file, group, a, b)
 	}
 
 	if a < 0 {
