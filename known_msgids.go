@@ -3,15 +3,37 @@ package overview
 import (
 	"log"
 	"sync"
+	"time"
 )
 
 type Known_MessageIDs struct {
-	v          map[string]bool // key: messageidhash, val: true (or false if unknown/not set)
-	l          []string        // holds an ordered list of msgidhashs
+	v          map[string]int64 // key: messageidhash, val: true (or false if unknown/not set)
 	Debug      bool            // print debug messages
 	MAP_MSGIDS int             // capacity
 	mux        sync.Mutex
 }
+
+
+func (km *Known_MessageIDs) ExpireThread() {
+	go func(){
+		log.Print("Known_msgids.ExpireThread() start")
+		for {
+			deleted := 0
+			time.Sleep(time.Second*5)
+			km.mux.Lock()
+			for msgidhash, expires := range km.v {
+				if expires > time.Now().Unix() {
+					go km.UnsetKnown(msgidhash)
+					deleted++
+				}
+			}
+			km.mux.Unlock()
+			if deleted > 0 {
+				log.Printf("KnownMsgIds ExpireThread deleted=%d", deleted)
+			}
+		}
+	}()
+} // end func ExpireThread
 
 func (km *Known_MessageIDs) SetKnown(msgidhash string) bool {
 	/*
@@ -26,38 +48,27 @@ func (km *Known_MessageIDs) SetKnown(msgidhash string) bool {
 	 *      // else: reply OK to command, and receive data
 	 *
 	 */
-	retval := false
 	km.mux.Lock()
+	defer km.mux.Unlock()
+
 	if km.v == nil {
 		log.Printf("ERROR OVERVIEW SetKnown km.v nil")
-		km.mux.Unlock()
 		return false
 	}
-	if !km.v[msgidhash] { // msgidhash is false == not in map
-		if len(km.v) == km.MAP_MSGIDS { // map is full, drop one from store in slice 'l'
-			for {
-				if len(km.l) == 0 {
-					break
-				}
-				clear_msgid := km.l[0] // fetch oldest entry
-				km.l[0] = ""           // forget
-				km.l = km.l[1:]        // and shift slice
-				if km.v[clear_msgid] {
-					delete(km.v, clear_msgid) // delete oldest from map
-					break
-				}
-			}
+
+	if km.v[msgidhash] >= time.Now().Unix() {
+		if km.Debug {
+			log.Printf("NOT SetKnown msgidhash=%s expires in='%d sec'", msgidhash, km.v[msgidhash]-time.Now().Unix())
 		}
-		km.v[msgidhash] = true         // adds new msgidhash to map
-		km.l = append(km.l, msgidhash) // appends to slice
-		retval = true
+		return false
 	}
-	km.mux.Unlock()
+
+	km.v[msgidhash] = time.Now().Unix()+15         // adds new msgidhash to map
 
 	if km.Debug {
-		log.Printf("SetKnown msgidhash=%s retval=%t", msgidhash, retval)
+		log.Printf("SetKnown msgidhash=%s", msgidhash)
 	}
-	return retval
+	return true
 } // end func SetKnown
 
 func (km *Known_MessageIDs) UnsetKnownQuick(msgidhash string) {
@@ -78,13 +89,6 @@ func (km *Known_MessageIDs) UnsetKnown(msgidhash string) {
 	 */
 	km.mux.Lock()
 	delete(km.v, msgidhash)
-	var newl []string
-	for _, v := range km.l {
-		if v != msgidhash {
-			newl = append(newl, v)
-		}
-	}
-	km.l = newl
 	km.mux.Unlock()
 
 	if km.Debug {
