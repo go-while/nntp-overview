@@ -14,10 +14,13 @@ import (
 	"time"
 )
 
+var (
+	muxNewOVI sync.RWMutex
+)
+
 func CMD_NewOverviewIndex(file string, group string) bool {
-	var mux sync.Mutex
-	mux.Lock()
-	defer mux.Unlock()
+	muxNewOVI.Lock()
+	defer muxNewOVI.Unlock()
 	// file = "/ov/abcd.overview"
 	if file == "" || group == "" {
 		log.Printf("Error CMD_NewOverviewIndex file=nil||group=nil")
@@ -97,6 +100,8 @@ func WriteOverviewIndex_INDEX(file string, data *IndexLine) {
 } // end func WriteOverviewIndex_INDEX
 
 func (ovi *OverviewIndex) ReadOverviewIndex(file string, group string, a uint64, b uint64) int64 {
+	muxNewOVI.RLock()
+	defer muxNewOVI.RUnlock()
 	// file == "*.Index"
 	cached_offset := ovi.GetOVIndexCacheOffset(group, a) // from memory
 	if cached_offset > 0 {
@@ -104,15 +109,16 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file string, group string, a uint64,
 	}
 
 	var offset int64
-	fh, err := os.OpenFile(file, os.O_RDONLY, 0444)
+	fh, err := os.OpenFile(file+".Index", os.O_RDONLY, 0444)
 	defer fh.Close()
 	if err != nil {
 		log.Printf("Error ReadOverviewIndex groups='%s' fp='%s' err0='%v'", group, filepath.Base(file), err)
 		if AUTOINDEX {
 			fOV := strings.Replace(file, ".Index", "", 1)
-			log.Printf("sending to OV_AUTOINDEX_CHAN")
-			OV_AUTOINDEX_CHAN <- &NEWOVI{fOV: fOV, group: group}
-			log.Printf("sent to OV_AUTOINDEX_CHAN")
+			//log.Printf("sending to OV_AUTOINDEX_CHAN: group='%s'", group)
+			//OV_AUTOINDEX_CHAN <- &NEWOVI{fOV: fOV, group: group}
+			//log.Printf("sent to OV_AUTOINDEX_CHAN: group='%s'", group)
+			go CMD_NewOverviewIndex(fOV, group)
 		}
 		return offset
 	}
@@ -332,14 +338,16 @@ type NEWOVI struct {
 }
 
 func OV_AutoIndex() {
+	log.Print("Starting OV_AutoIndex")
 	for {
 		select {
 		case dat := <-OV_AUTOINDEX_CHAN:
 			if dat == nil || dat.fOV == "" || dat.group == "" {
+				log.Printf("ERROR OV_AUTOINDEX_CHAN dat='%v'", dat)
 				continue
 			}
 			log.Printf("OV_AutoIndexer: dat.fOV='%s' group='%s'", dat.fOV, dat.group)
-			CMD_NewOverviewIndex(dat.fOV, dat.group)
+			go CMD_NewOverviewIndex(dat.fOV, dat.group)
 		} // end select
 	} // end for
 } // end func OV_Indexer
@@ -589,13 +597,17 @@ readlines:
 			return false
 		}
 		fmt.Fprintf(newfh, "%s\n", header)
-		for _, line := range writeLines {
+		for i, line := range writeLines {
 			if line == "" {
 				return false
 			}
-			fmt.Fprintf(newfh, "%s\n", line)
+
+			fmt.Fprintf(newfh, "%s", line)
+			if i < len(writeLines)-1 {
+				fmt.Fprint(newfh, "\n") // do not append newline on last line!
+			}
 		}
-		fmt.Fprintf(newfh, "\x00")
+		//fmt.Fprintf(newfh, "\x00")
 		err = newfh.Close()
 		if err != nil {
 			log.Printf("Error OV ReOrderOV newfh='%s' err='%v'", filepath.Base(newfile), err)
