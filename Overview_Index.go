@@ -217,7 +217,7 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file string, group string, a uint64,
 } // end func ReadOverviewIndex
 
 type OverviewIndex struct {
-	mux               sync.Mutex
+	mux               sync.RWMutex
 	IndexMap          map[string]map[uint64]CachedOffset // data[group][msgnum]offset
 	IndexCache        []string                    // rotating list with cached index groups
 	IndexCacheSize    int                         // number of groups we cache an index for
@@ -273,11 +273,11 @@ func (ovi *OverviewIndex) SetOVIndexCacheOffset(group string, fnum uint64, offse
 } // end func SetOVIndexCacheOffset
 
 func (ovi *OverviewIndex) GetOVIndexCacheOffset(group string, a uint64) (offset int64) {
-	/*
-	if a < 100 {
+
+	if a <= 100 {
 		return
 	}
-	*/
+
 	// offets are created for every 100 messages in overview
 	// 1|100|offset1|offset2
 	// 101|200|offset1|offset2
@@ -288,8 +288,8 @@ func (ovi *OverviewIndex) GetOVIndexCacheOffset(group string, a uint64) (offset 
 	floored := ((a / 100) * 100)
 	//log.Printf("Try GetOVIndexCacheOffset group='%s' a=%d floored=%d", group, a, floored)
 
-	ovi.mux.Lock()
-	defer ovi.mux.Unlock()
+	ovi.mux.RLock()
+	defer ovi.mux.RUnlock()
 
 	if ovi.IndexMap == nil {
 		return
@@ -303,8 +303,18 @@ func (ovi *OverviewIndex) GetOVIndexCacheOffset(group string, a uint64) (offset 
 		offset = ovi.IndexMap[group][floored].Offset
 		log.Printf("OK GetOVIndexCacheOffset group='%s' a=%d f=%d @offset=%d", group, a, floored, offset)
 	} else {
-		log.Printf("NO GetOVIndexCacheOffset group='%s' a=%d f=%d", group, a, floored)
 
+		if floored >= 200 {
+			// try 100 less
+			floored -= 100
+			if ovi.IndexMap[group][floored].Offset > 0 {
+				offset = ovi.IndexMap[group][floored].Offset
+			}
+		}
+
+	}
+	if offset == 0 {
+		log.Printf("NO GetOVIndexCacheOffset group='%s' a=%d f=%d", group, a, floored)
 	}
 	return
 } // func GetOVIndexCacheOffset
