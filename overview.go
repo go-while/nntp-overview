@@ -2354,11 +2354,11 @@ func Scan_Overview(file string, group string, a uint64, b uint64, fields string,
 			log.Printf("Error Scan_Overview os.Open.Seek fp='%s' offset=%d err='%v'", offset, filepath.Base(file), err)
 			return nil, err
 		}
-		//log.Printf("Scan_Overview SEEK fp='%s' a=%d @offset=%d", filepath.Base(file), a, offset)
+		log.Printf("Scan_Overview SEEK group='%s' fp='%s' a=%d @offset=%d", group, filepath.Base(file), a, offset)
 	}
 
 	fileScanner := bufio.NewScanner(readFile)
-	maxScan := 4096 // default NewScanner uses 64K buffer
+	maxScan := 64*1024 // default NewScanner uses 64K buffer
 	if fields == "ReOrderOV" {
 		maxScan = 1024 * 1024
 	}
@@ -2399,7 +2399,7 @@ forfilescanner:
 		ll := len(line)
 		if ll == 0 {
 			err = fmt.Errorf("break Scan_Overview lc=%d got empty line?!")
-			log.Printf("%s", err)
+			log.Printf("%v", err)
 			return nil, err
 		}
 
@@ -2422,6 +2422,7 @@ forfilescanner:
 		if msgnum == 0 {
 			if len(datafields[4]) > 0 && (datafields[4][0] == 'X' || datafields[4][0] == 0) { // check if first char is X or NUL
 				// expiration removed article from overview
+				log.Printf("Invalid articlenum in overview '%s' line=%d", group, lc)
 				continue forfilescanner
 			}
 			err = fmt.Errorf("Error Scan_Overview lc=%d msgnum=0 file='%s'", lc, filepath.Base(file))
@@ -2452,9 +2453,11 @@ forfilescanner:
 		}
 
 		// view-filter TODO hardcoded
+		/*
 		if conn != nil && fields == "all" && strings.HasSuffix(datafields[4], "googlegroups.com>") && (strings.HasPrefix(datafields[4],"=?UTF-8")||strings.HasPrefix(datafields[4]," =?UTF-8")) {
 			continue forfilescanner
 		}
+		*/
 
 		/*
 			0 "NUM",
@@ -2577,6 +2580,7 @@ forfilescanner:
 		indexSize := 100 // gets offsets for every 100 overview entries
 		tmp_offsets := make(map[uint64]int64, indexSize)
 		tmp_msgnums := []uint64{}
+		log.Printf("NewOVI: group='%s' msgnums=%d a=%d,b=%d", group, len(msgnums), a, b)
 		for _, msgnum := range msgnums {
 			if len(tmp_offsets) >= indexSize {
 				WriteOverviewIndex(file, tmp_msgnums, tmp_offsets)
