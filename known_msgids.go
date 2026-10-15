@@ -63,7 +63,7 @@ func (km *Known_MessageIDs) SetKnown(msgidhash string) bool {
 		return false
 	}
 
-	km.v[msgidhash] = time.Now().Unix()+15         // adds new msgidhash to map
+	km.v[msgidhash] = time.Now().Unix()+120         // adds new msgidhash to map
 
 	if km.Debug {
 		log.Printf("SetKnown msgidhash=%s", msgidhash)
