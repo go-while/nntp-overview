@@ -130,7 +130,7 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file string, group string, a uint64,
 	fileScanner.Buffer(buf, maxScan)
 	fileScanner.Split(bufio.ScanLines)
 	lc := 0
-	log.Printf("ReadOverviewIndex groups='%s' SCAN a=%d", group, a)
+	log.Printf("ReadOverviewIndex groups='%s' SCAN a=%d b=%d", group, a, b)
 	/*  todo: get rid of x_a and x_y. only need x_b as floored + x_z offset
 	 * 	|x_a|x_b|x_y|x_z
 		|1|100|128|19736|
@@ -208,11 +208,14 @@ func (ovi *OverviewIndex) ReadOverviewIndex(file string, group string, a uint64,
 		}
 		OVIndex.SetOVIndexCacheOffset(group, x_b, x_z)
 
-		if a >= x_a && a <= x_b {
+		if a >= x_a && a < x_b {
 			offset = x_y
 			break
+		} else if a >= x_b {
+			offset = x_z
 		}
 	}
+	log.Printf("ReadOverviewIndex group %s return offset=%d a=%d b=%d", group, offset, a, b)
 	return offset
 } // end func ReadOverviewIndex
 
@@ -230,7 +233,7 @@ type CachedOffset struct {
 }
 
 func (ovi *OverviewIndex) SetOVIndexCacheOffset(group string, fnum uint64, offset int64) {
-	log.Printf("SetOVIndexCacheOffset group='%s' fnum=%d offset=%d", group, fnum, offset)
+	//log.Printf("SetOVIndexCacheOffset group='%s' fnum=%d offset=%d", group, fnum, offset)
 	ovi.IndexCacheSize = 4096 // *hardcoded*groups*
 	ovi.IndexSubCacheSize = 4096 // *hardcoded*offsets*per*group*
 	// 4k*4k*16b?~256M? memory usage (theoreticaly... we're in go ;))
