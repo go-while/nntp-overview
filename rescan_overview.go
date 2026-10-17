@@ -33,7 +33,7 @@ func Rescan_help() {
 	fmt.Println(" > FIX / REBUILD options")
 	fmt.Println("   mode: 997 == like mode 3 with quíck rebuild ActiveMap")
 	fmt.Println("   mode: 998 == like mode 0 with deep check and safer but slower rebuild ActiveMap")
-	fmt.Println("   mode: 999 == like mode 4 with try fix-footer!")
+	fmt.Println("   mode: 999 == repair with RepairOverview (keeps a .bak), same as ov-repair -fix")
 	fmt.Println("   mode: 1000 == only insert messageidhash to mysql")
 	os.Exit(0)
 }
