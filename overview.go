@@ -1458,8 +1458,8 @@ func handle_open_ov(who string, hash string, file_path string) (*OVFH, error) {
 
 	foot := strings.Split(ov_footer, ",")
 	if len(foot) != SIZEOF_FOOT {
-		log.Printf("who='%s' ERROR Open_ov -> len(foot)=%d != SIZEOF_FOOT=%d fp='%s'", len(foot), SIZEOF_FOOT, file_path)
-		return nil, fmt.Errorf("ERROR handle_open_ov cs=%d fp='%s'", who, cs, file_path)
+		log.Printf("who='%s' ERROR Open_ov -> len(foot)=%d != SIZEOF_FOOT=%d fp='%s'", who, len(foot), SIZEOF_FOOT, file_path)
+		return nil, fmt.Errorf("who='%s' ERROR handle_open_ov cs=%d fp='%s'", who, cs, file_path)
 	}
 	cs++ // 5
 
@@ -2093,7 +2093,7 @@ func Grow_ov(who string, ovfh *OVFH, pages int, blocksize string, mode int, dele
 	// 4. append footer
 	ov_footer := construct_footer(who, ovfh, "Grow_ov()")
 	if len(ov_footer) != OV_RESERVE_END {
-		log.Printf("who='%s' Error Grow_ov -> 4. ov_footer=%d != OV_RESERVE_END=%d", len(ov_footer), OV_RESERVE_END)
+		log.Printf("who='%s' Error Grow_ov -> 4. ov_footer=%d != OV_RESERVE_END=%d", who, len(ov_footer), OV_RESERVE_END)
 		return nil, err
 	}
 	if wb, err := init_file(who, ovfh.File_path, ov_footer, true); err != nil {
@@ -2351,7 +2351,7 @@ func Scan_Overview(file string, group string, a uint64, b uint64, fields string,
 	if offset > 0 {
 		_, err = readFile.Seek(offset, 0)
 		if err != nil {
-			log.Printf("Error Scan_Overview os.Open.Seek fp='%s' offset=%d err='%v'", offset, filepath.Base(file), err)
+			log.Printf("Error Scan_Overview os.Open.Seek fp='%s' offset=%d err='%v'", filepath.Base(file), offset, err)
 			return nil, err
 		}
 		log.Printf("Scan_Overview SEEK group='%s' fp='%s' a=%d @offset=%d", group, filepath.Base(file), a, offset)
@@ -2398,14 +2398,14 @@ forfilescanner:
 		lc++
 		ll := len(line)
 		if ll == 0 {
-			err = fmt.Errorf("break Scan_Overview lc=%d got empty line?!")
+			err = fmt.Errorf("break Scan_Overview lc=%d got empty line?!", lc)
 			log.Printf("%v", err)
 			return nil, err
 		}
 
 		if ll >= 0 && ll <= 3 {
 			if line == "" || line[0] == 0 || line[0] == '\x00' || line == "EOV" {
-				log.Printf("break Scan_Overview lc=%d")
+				log.Printf("break Scan_Overview lc=%d", lc)
 				break forfilescanner
 			}
 		}

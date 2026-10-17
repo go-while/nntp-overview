@@ -159,7 +159,7 @@ func MsgIDhash2mysqlMany(key string, list []Msgidhash_item, db *sql.DB, tried in
 		return false, fmt.Errorf("ERROR overview.MsgIDhash2mysqlMany key=%s list empty", key)
 	}
 	if tried > 15 {
-		log.Printf("ERROR MsgIDhash2mysqlMany tried=%d")
+		log.Printf("ERROR MsgIDhash2mysqlMany tried=%d", tried)
 		os.Exit(1)
 	}
 	var vals []interface{}
@@ -256,7 +256,7 @@ func ClearStat(stat string, db *sql.DB) (error) {
 					log.Printf("ERROR overview.ClearStat stat='%s' res.RowsAffected() err='%v'", stat, err)
 					return err
 				}
-				log.Printf("ClearStat stat='%s' table='h_%s%s%s' deleted=%d", stat, table, rowCnt)
+				log.Printf("ClearStat stat='%s' table='h_%s' deleted=%d", stat, table, rowCnt)
 				deleted++
 			}
 		}

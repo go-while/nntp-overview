@@ -122,7 +122,7 @@ func (oh *OV_Handler) GetOpen(hid int, who string, file_path string, hash string
 	}
 
 	// was not open, return empty OVFH struct and true, will create new file handle
-	log.Printf("%s ERROR GetOpen failed final hash='%s'", hid, hash)
+	log.Printf("%s ERROR GetOpen failed final hid=%d hash='%s'", who, hid, hash)
 	OV_handler.KILL(who)
 	return nil, false
 } // end func OV_Handler.GetOpen
@@ -163,7 +163,7 @@ func (oh *OV_Handler) Park(hid int, who string, ovfh *OVFH) bool {
 		oh.V[ovfh.Hash] = mapdata
 		retval = true
 	} else {
-		log.Printf("%s FATAL ERROR Park mapdata.hid=%d mapdata.open=%t mapdata.preopen=%t hash='%s'", who, hid, mapdata.hid, mapdata.open, mapdata.preopen, ovfh.Hash)
+		log.Printf("%s FATAL ERROR Park hid=%d mapdata.hid=%d mapdata.open=%t mapdata.preopen=%t hash='%s'", who, hid, mapdata.hid, mapdata.open, mapdata.preopen, ovfh.Hash)
 		OV_handler.KILL(who)
 	}
 	oh.mux.Unlock()
