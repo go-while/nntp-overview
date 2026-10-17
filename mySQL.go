@@ -245,8 +245,8 @@ func ClearStat(stat string, db *sql.DB) (error) {
 		for _, c2 := range cs {
 			for _, c3 := range cs {
 				table := string(c1)+string(c2)+string(c3)
-				query := "DELETE FROM "+"h_"+table+" WHERE fsize is NULL and stat = "+stat
-				res, err := db.Exec(query)
+				query := "DELETE FROM " + "h_" + table + " WHERE fsize is NULL and stat = ?"
+				res, err := db.Exec(query, stat)
 				if err != nil {
 					log.Printf("ERROR overview.ClearStat stat='%s' err='%v'", stat, err)
 					return err

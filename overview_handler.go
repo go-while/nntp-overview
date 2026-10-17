@@ -63,7 +63,7 @@ func (oh *OV_Handler) GetOpen(hid int, who string, file_path string, hash string
 		if err := Create_ov(who, file_path, hash, 3); err != nil {
 			oh.mux.Unlock()
 			log.Printf("%s FATAL ERROR Create_ov hash='%s' err='%v'", who, hash, err)
-			OV_handler.KILL(who)
+			oh.release_failed_open(hid, who, hash)
 			return nil, false
 		}
 		if oh.Debug {
@@ -123,9 +123,21 @@ func (oh *OV_Handler) GetOpen(hid int, who string, file_path string, hash string
 
 	// was not open, return empty OVFH struct and true, will create new file handle
 	log.Printf("%s ERROR GetOpen failed final hid=%d hash='%s'", who, hid, hash)
-	OV_handler.KILL(who)
+	oh.release_failed_open(hid, who, hash)
 	return nil, false
 } // end func OV_Handler.GetOpen
+
+// release_failed_open undoes the assignment and the group lock of a failed GetOpen,
+// else every later writer for this group waits forever.
+func (oh *OV_Handler) release_failed_open(hid int, who string, hash string) {
+	oh.mux.Lock()
+	mapdata := oh.V[hash]
+	if mapdata.hid == hid && !mapdata.open {
+		delete(oh.V, hash)
+	}
+	oh.mux.Unlock()
+	open_mmap_overviews.unlockMMAP(hid, who, true, hash)
+} // end func release_failed_open
 
 func (oh *OV_Handler) SetOpen(hid int, who string, ovfh *OVFH) bool {
 	retval := false
@@ -401,6 +413,10 @@ func (oh *OV_Handler) process_close_request(hid int, who string, close_request O
 
 			} // end Flush_ov
 		} // end if lastflush
+		if reply.err != nil {
+			// flush failed: close the handle instead of parking it, so the group lock is released
+			force_close = true
+		}
 	} // end if !force_close
 
 	if !force_close && reply.err == nil {
@@ -411,8 +427,10 @@ func (oh *OV_Handler) process_close_request(hid int, who string, close_request O
 	if force_close || reply.err == nil {
 		// really close the file, return retbool and err to reply_chan
 		update_footer, grow := true, false
-		if err := handle_close_ov(who, close_request.ovfh, update_footer, force_close, grow); err == nil {
-			<-count_open_overviews // suck one out reduces len of channel
+		err := handle_close_ov(who, close_request.ovfh, update_footer, force_close, grow)
+		// handle_close_ov always unmaps and closes, so the open slot is free even on error
+		<-count_open_overviews // suck one out reduces len of channel
+		if err == nil {
 			retval = true
 			reply.retbool = retval
 		} else {
@@ -469,6 +487,7 @@ func (oh *OV_Handler) process_open_request(hid int, who string, open_request Ove
 } // end func process_open_request
 
 func (oh *OV_Handler) KILL(who string) {
+	// only logs. it used to send into the server's shared stop channel:
+	// that disconnected a random session and panics once the server closed the channel.
 	log.Printf("ERROR %s KILL", who)
-	oh.STOP <- true
 }

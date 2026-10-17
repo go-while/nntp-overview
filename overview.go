@@ -1,6 +1,8 @@
 package overview
 
 import (
+	"bytes"
+	"errors"
 	"bufio"
 	"fmt"
 	"github.com/edsrzf/mmap-go"
@@ -726,9 +728,26 @@ func Construct_OVL(ovl OVL) string {
 		ref_len += len_ref
 
 	}
-	ret_ovl_str := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%d\t%d", ovl.Subject, ovl.From, ovl.Date, ovl.Messageid, references, ovl.Bytes, ovl.Lines)
+	// a tab, newline or NUL inside a field breaks the line format of the overview file
+	ret_ovl_str := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%d\t%d", clean_ov_field(ovl.Subject), clean_ov_field(ovl.From), clean_ov_field(ovl.Date), clean_ov_field(ovl.Messageid), clean_ov_field(references), ovl.Bytes, ovl.Lines)
 	return ret_ovl_str
 } // end func Construct_OVL
+
+// clean_ov_field replaces characters that would break an overview line with a space.
+func clean_ov_field(field string) string {
+	if strings.IndexAny(field, "\t\r\n\x00") < 0 {
+		return field
+	}
+	// byte-wise: strings.Map would turn non-UTF8 bytes (latin1 in old articles) into U+FFFD
+	b := []byte(field)
+	for i, c := range b {
+		switch c {
+		case '\t', '\r', '\n', 0:
+			b[i] = ' '
+		}
+	}
+	return string(b)
+} // end func clean_ov_field
 
 func return_overview_lock() {
 	MAX_Open_overviews_chan <- struct{}{}
@@ -752,6 +771,7 @@ func (ov *OV) GO_pi_ov(who string, overviewline string, newsgroup string, hash s
 	}
 	if ovfh.Mmap_handle == nil {
 		log.Printf("who='%s' ERROR GO_pi_ov ovfh.Mmap_handle=nil", who)
+		release_ov(who, ovfh)
 		return fail_retchan(retchan)
 	}
 	if DEBUG_OV {
@@ -767,6 +787,10 @@ func (ov *OV) GO_pi_ov(who string, overviewline string, newsgroup string, hash s
 	new_ovfh, err, errstr := Write_ov(who, ovfh, ovl_line, false, false, false, false)
 	if err != nil {
 		log.Printf("who='%s' ERROR GO_pi_ovWrite_ovfh err='%v' errstr='%s'", who, err, errstr)
+		if new_ovfh != nil && new_ovfh.Mmap_handle != nil {
+			ovfh = new_ovfh
+		}
+		release_ov(who, ovfh)
 		return fail_retchan(retchan)
 
 	} else {
@@ -777,8 +801,13 @@ func (ov *OV) GO_pi_ov(who string, overviewline string, newsgroup string, hash s
 			log.Printf("who='%s' GO_pi_ov OK ng='%s' ovfh.Findex=%d ovfh.Last=%d", who, newsgroup, ovfh.Findex, ovfh.Last)
 		}
 
+		// the footer holds the NEXT article number: increment before writing the footer,
+		// else a crash before the next footer update leaves last == lastline and the file can not be opened.
+		ovfh.Last++
+
 		if _, err := Update_Footer(who, ovfh, "GO_pi_ov"); err != nil {
 			log.Printf("who='%s' ERROR overview.Update_Footer ng='%s' err='%v'", who, newsgroup, err)
+			release_ov(who, ovfh)
 			return fail_retchan(retchan)
 
 		} else {
@@ -787,7 +816,6 @@ func (ov *OV) GO_pi_ov(who string, overviewline string, newsgroup string, hash s
 			}
 		}
 	}
-	ovfh.Last++
 
 	// finally close the mmap
 	if DEBUG_OV {
@@ -800,6 +828,14 @@ func (ov *OV) GO_pi_ov(who string, overviewline string, newsgroup string, hash s
 	last_msgnum := ovfh.Last - 1
 	return true_retchan(last_msgnum, newsgroup, hash, retchan)
 } // end func GO_pi_ov
+
+// release_ov force-closes an overview handle after an error,
+// so the group lock and the open-file slot are returned.
+func release_ov(who string, ovfh *OVFH) {
+	if err := Close_ov(who, ovfh, false, true); err != nil {
+		log.Printf("who='%s' ERROR release_ov err='%v'", who, err)
+	}
+} // end func release_ov
 
 func Extract_overview(msgid string, header []string) OVL {
 	var ovl OVL
@@ -823,7 +859,7 @@ func Extract_overview(msgid string, header []string) OVL {
 		str_nextline := ""
 		//log.Printf("msgid='%s' line=%d", msgid, i)
 		// get the next line if any
-		if nextline < len(header)-1 {
+		if nextline < len(header) {
 			if header[nextline] != "" {
 				str_nextline = header[nextline]                      // next line as string
 				spaced_nextline = utils.IsSpace(header[nextline][0]) // first char of next line
@@ -840,9 +876,14 @@ func Extract_overview(msgid string, header []string) OVL {
 			"Xref:full",
 		*/
 
-		header_key := strings.TrimSpace(strings.Split(headline, ":")[0])
+		// split at the first colon: "Key: value", "Key:value" and "Key : value" all give key and value
+		colon := strings.Index(headline, ":")
+		if colon <= 0 {
+			continue
+		}
+		header_key := strings.TrimSpace(headline[:colon])
 		header_key_L := strings.ToLower(header_key)
-		header_dat := strings.TrimSpace(strings.Replace(headline, header_key+": ", "", 1))
+		header_dat := strings.TrimSpace(headline[colon+1:])
 
 		if !has_subj && header_key_L == "subject" {
 			has_subj = true
@@ -1399,34 +1440,55 @@ func Open_ov(who string, file_path string) (*OVFH, error) {
 } // end func Open_ov
 
 func handle_open_ov(who string, hash string, file_path string) (*OVFH, error) {
+	ovfh, err := open_ov_once(who, hash, file_path)
+	if err == nil || !AutoRepair || !utils.FileExists(file_path) {
+		return ovfh, err
+	}
+	// the file exists but can not be opened: broken footer, torn last line, ...
+	log.Printf("who='%s' WARN handle_open_ov failed, running RepairOverview fp='%s' err='%v'", who, file_path, err)
+	rep, rerr := RepairOverview(file_path, RepairOpts{Fix: true, Backup: true})
+	if rerr != nil || (rep.Status != REPAIR_STATUS_REPAIRED && rep.Status != REPAIR_STATUS_OK) {
+		log.Printf("who='%s' ERROR handle_open_ov RepairOverview failed fp='%s' err='%v' report: %s", who, file_path, rerr, rep.String())
+		return nil, err
+	}
+	return open_ov_once(who, hash, file_path)
+} // end func handle_open_ov
+
+func open_ov_once(who string, hash string, file_path string) (*OVFH, error) {
 	var err error
 	var file_handle *os.File
 	var mmap_handle mmap.MMap
 	var ov_footer string
 	cs := 0
 
-	/*
-		file_path_new := file_path + ".new"
-		if utils.FileExists(file_path_new) {
-			log.Printf("who='%s' INFO handle_open_ov fp='%s.new'", who, file_path)
-			file_path = file_path_new
-		} else
-	*/
 	if !utils.FileExists(file_path) {
 		return nil, fmt.Errorf("%s ERROR handle_open_ov !fileExists fp='%s'", who, file_path)
 	}
 
 	if file_handle, err = os.OpenFile(file_path, os.O_RDWR, 0644); err != nil {
-		log.Printf("who='%s' ERROR handle_open_ov -> mmap.Map err='%v' cs=%d fp='%s'", who, err, cs, file_path)
+		log.Printf("who='%s' ERROR handle_open_ov -> os.OpenFile err='%v' cs=%d fp='%s'", who, err, cs, file_path)
 		return nil, err
 	}
 	cs++ // 1
 
 	if mmap_handle, err = mmap.Map(file_handle, mmap.RDWR, 0); err != nil || mmap_handle == nil {
-		log.Printf("who='%s' ERROR handle_open_ov -> Read_Head_ov err='%v' mmap_handle='%v' cs=%d fp='%s'", who, err, mmap_handle, cs, file_path)
+		log.Printf("who='%s' ERROR handle_open_ov -> mmap.Map err='%v' cs=%d fp='%s'", who, err, cs, file_path)
+		file_handle.Close()
+		if err == nil {
+			err = fmt.Errorf("%s ERROR handle_open_ov mmap_handle=nil fp='%s'", who, file_path)
+		}
 		return nil, err
 	}
 	cs++ // 2
+
+	// unmap and close on every error return below
+	ok := false
+	defer func() {
+		if !ok {
+			mmap_handle.Unmap()
+			file_handle.Close()
+		}
+	}()
 
 	time_open, time_flush, written := utils.Now(), utils.Now(), 0
 
@@ -1456,35 +1518,35 @@ func handle_open_ov(who string, hash string, file_path string) (*OVFH, error) {
 	}
 	cs++ // 4
 
-	foot := strings.Split(ov_footer, ",")
-	if len(foot) != SIZEOF_FOOT {
-		log.Printf("who='%s' ERROR Open_ov -> len(foot)=%d != SIZEOF_FOOT=%d fp='%s'", who, len(foot), SIZEOF_FOOT, file_path)
-		return nil, fmt.Errorf("who='%s' ERROR handle_open_ov cs=%d fp='%s'", who, cs, file_path)
+	last, findex, footok := parse_footer([]byte(ov_footer))
+	if !footok {
+		log.Printf("who='%s' ERROR Open_ov -> parse_footer failed fp='%s'", who, file_path)
+		return nil, fmt.Errorf("%s ERROR handle_open_ov cs=%d fp='%s'", who, cs, file_path)
 	}
 	cs++ // 5
 
-	if !strings.HasPrefix(foot[1], "last=") ||
-		!strings.HasPrefix(foot[2], "Findex=") ||
-		!strings.HasPrefix(foot[3], "bodyend=") ||
-		!strings.HasPrefix(foot[4], "fend=") {
-		log.Printf("who='%s' ERROR Open_ov -> error !HasPrefix foot fp='%s'", who, file_path)
+	// bodyend/fend in the footer are not checked: Grow_ov wrote them with the old size for years.
+	// Findex must point into the body, else Replay_Footer reads out of range.
+	bodyend := ovfh.Mmap_size - OV_RESERVE_END
+	if findex < OV_RESERVE_BEG || findex >= bodyend || (findex > OV_RESERVE_BEG && last == 0) {
+		log.Printf("who='%s' ERROR Open_ov -> findex=%d outside body [%d:%d) last=%d fp='%s'", who, findex, OV_RESERVE_BEG, bodyend, last, file_path)
 		return nil, fmt.Errorf("%s ERROR handle_open_ov cs=%d fp='%s'", who, cs, file_path)
 	}
 	cs++ // 6
 
-	last, findex := utils.Str2uint64(strings.Split(foot[1], "=")[1]), utils.Str2int(strings.Split(foot[2], "=")[1])
-	bodyend, fend := utils.Str2int(strings.Split(foot[3], "=")[1]), utils.Str2int(strings.Split(foot[4], "=")[1])
-	if findex >= bodyend && bodyend != fend-OV_RESERVE_END {
-		log.Printf("who='%s' ERROR Open_ov -> findex=%d > bodyend=%d ? fend=%d fp='%s'", who, findex, bodyend, fend, file_path)
-		return nil, fmt.Errorf("%s ERROR handle_open_ov cs=%d fp='%s'", who, cs, file_path)
+	// bytes after Findex belong to a line that was written but never committed to the footer
+	// (crash between Write_ov and Update_Footer) or to an old footer (crash inside Grow_ov).
+	stale := 0
+	for i := findex; i < bodyend; i++ {
+		if ovfh.Mmap_handle[i] != 0 {
+			ovfh.Mmap_handle[i] = 0
+			stale++
+		}
+	}
+	if stale > 0 {
+		log.Printf("who='%s' WARN handle_open_ov zeroed %d stale bytes after Findex=%d fp='%s'", who, stale, findex, file_path)
 	}
 	cs++ // 7
-
-	if findex < OV_RESERVE_BEG || findex > OV_RESERVE_BEG && last == 0 {
-		log.Printf("who='%s' ERROR Open_ov -> findex=%d OV_RESERVE_BEG=%d last=%d fp='%s'", who, findex, OV_RESERVE_BEG, last, file_path)
-		return nil, fmt.Errorf("%s ERROR handle_open_ov cs=%d fp='%s'", who, cs, file_path)
-	}
-	cs++ // 8
 
 	ovfh.Findex = findex
 	ovfh.Last = last
@@ -1492,12 +1554,10 @@ func handle_open_ov(who string, hash string, file_path string) (*OVFH, error) {
 		if DEBUG_OV {
 			log.Printf("who='%s' handle_open_ov -> Replay_Footer OK fp='%s'", who, file_path)
 		}
+		ok = true
 		return ovfh, nil
-	} else {
-		log.Printf("who='%s' ERROR handle_open_ov -> !Replay_Footer fp='%s'", who, file_path)
-
 	}
-	log.Printf("who='%s' handle_open_ov !OK fp='%s'", who, file_path)
+	log.Printf("who='%s' ERROR handle_open_ov -> !Replay_Footer fp='%s'", who, file_path)
 	return nil, fmt.Errorf("%s ERROR handle_open_ov cs=%d fp='%s' final", who, cs, file_path)
 } // end func handle_open_ov
 
@@ -1538,31 +1598,35 @@ func Close_ov(who string, ovfh *OVFH, update_footer bool, force_close bool) erro
 } // end func Close_ov
 
 func handle_close_ov(who string, ovfh *OVFH, update_footer bool, force_close bool, grow bool) error {
+	// best effort: always try to flush, unmap and close, return the first error
 	var err error
-	if update_footer {
-		if DEBUG_OV {
-			log.Printf("who='%s' handle_close_ov update_footer=%t grow=%t fp='%s'", who, update_footer, grow, ovfh.File_path)
-		}
-		if _, err := Update_Footer(who, ovfh, "handle_close_ov"); err != nil {
-			return err
+	keep := func(e error) {
+		if e != nil && err == nil {
+			err = e
 		}
 	}
-
-	if err = ovfh.Mmap_handle.Flush(); err != nil {
-		return err
+	if len(ovfh.Mmap_handle) > 0 {
+		if update_footer && ovfh.Last > 0 && ovfh.Findex > 0 {
+			// Last == 0: nothing written yet, the footer from Create_ov is still valid
+			if DEBUG_OV {
+				log.Printf("who='%s' handle_close_ov update_footer=%t grow=%t fp='%s'", who, update_footer, grow, ovfh.File_path)
+			}
+			if _, e := Update_Footer(who, ovfh, "handle_close_ov"); e != nil {
+				keep(e)
+			}
+		}
+		keep(ovfh.Mmap_handle.Flush())
+		keep(ovfh.Mmap_handle.Unmap()) // sets ovfh.Mmap_handle = nil
 	}
-	if err = ovfh.Mmap_handle.Unmap(); err != nil {
-		log.Fatalf("Error ovfh.Mmap_handle.Unmap err='%v'", err)
-		return err
-	}
-	if err = ovfh.File_handle.Close(); err != nil {
-		return err
-	}
-	if DEBUG_OV {
-		log.Printf("who='%s' handle_close_ov update_footer=%t grow=%t OK fp='%s'", who, update_footer, grow, ovfh.File_path)
+	if ovfh.File_handle != nil {
+		if e := ovfh.File_handle.Close(); e != nil && !errors.Is(e, os.ErrClosed) {
+			keep(e)
+		}
 	}
 	if err != nil {
 		log.Printf("who='%s' ERROR handle_close_ov fp='%s' err='%v'", who, ovfh.File_path, err)
+	} else if DEBUG_OV {
+		log.Printf("who='%s' handle_close_ov update_footer=%t grow=%t OK fp='%s'", who, update_footer, grow, ovfh.File_path)
 	}
 	return err
 } // end func handle_close_ov
@@ -1698,14 +1762,20 @@ replay:
 		diff := frees - 1
 		ovfh.Findex -= diff
 		log.Printf("who='%s' WARN OV adjusted frees=%d oldFindex=%d - diff=%d = Findex=%d", who, frees, oldFindex, diff, ovfh.Findex)
-		time.Sleep(5 * time.Second) // DEBUG SLEEP
 
 	}
 	if utils.IsDigit(last_str) {
-		if utils.Str2uint64(last_str) == ovfh.Last-1 {
+		lastnum := utils.Str2uint64(last_str)
+		if lastnum == ovfh.Last-1 {
 			if DEBUG_OV {
 				log.Printf("who='%s' Replay_Footer OK fp='%s' last=%s next=%d", who, ovfh.File_path, last_str, ovfh.Last)
 			}
+			return true
+		}
+		if lastnum > 0 && lastnum == ovfh.Last {
+			// written by the old code, which updated the footer before Last++
+			ovfh.Last = lastnum + 1
+			log.Printf("who='%s' WARN Replay_Footer fixed footer last=%d -> next=%d fp='%s'", who, lastnum, ovfh.Last, filepath.Base(ovfh.File_path))
 			return true
 		}
 	}
@@ -1953,25 +2023,20 @@ func Create_ov(who string, File_path string, hash string, pages int) error {
 	ov_body := zerofill_block(pages, "4K") // initial max of overview data, will grow when needed
 	ov_footer := zerofill(foot_str, OV_RESERVE_END)
 
-	wb, wbt := 0, 0 // debugs written bytes
-
-	if wb, err = init_file(who, File_path, ov_header, false); err != nil {
-		log.Printf("who='%s' ERROR Create_ov init_file ov_header fp='%s' err='%v'", who, File_path, err)
+	// write everything to a tmp file and rename it: a crash can not leave a file without footer
+	tmp_path := File_path + ".tmp"
+	os.Remove(tmp_path) // init_file appends: drop a leftover from a crash
+	wbt := 0
+	if wbt, err = init_file(who, tmp_path, ov_header+ov_body+ov_footer, false); err != nil {
+		log.Printf("who='%s' ERROR Create_ov init_file fp='%s' err='%v'", who, tmp_path, err)
+		os.Remove(tmp_path)
 		return err
 	}
-	wbt += wb
-
-	if wb, err = init_file(who, File_path, ov_body, false); err != nil {
-		log.Printf("who='%s' ERROR Create_ov init_file ov_body fp='%s' err='%v'", who, File_path, err)
+	if err = os.Rename(tmp_path, File_path); err != nil {
+		log.Printf("who='%s' ERROR Create_ov rename fp='%s' err='%v'", who, File_path, err)
+		os.Remove(tmp_path)
 		return err
 	}
-	wbt += wb
-
-	if wb, err = init_file(who, File_path, ov_footer, false); err != nil {
-		log.Printf("who='%s' ERROR Create_ov init_file ov_footer fp='%s' err='%v'", who, File_path, err)
-		return err
-	}
-	wbt += wb
 
 	if DEBUG_OV {
 		log.Printf("who='%s' Create_ov OK fp='%s' wbt=%d", who, File_path, wbt)
@@ -1989,6 +2054,10 @@ func Grow_ov(who string, ovfh *OVFH, pages int, blocksize string, mode int, dele
 
 	if DEBUG_OV {
 		log.Printf("who='%s' Grow_ov pages=%d bs=%s fp='%s'", who, pages, blocksize, ovfh.File_path)
+	}
+
+	if mode != 999 && !delete {
+		return grow_ov_safe(who, ovfh, pages, blocksize)
 	}
 
 	if mode != 999 { // dont do these checks if we want to fix overview footer
@@ -2125,6 +2194,88 @@ func Grow_ov(who string, ovfh *OVFH, pages int, blocksize string, mode int, dele
 	}
 	return new_ovfh, err
 } // end func Grow_ov
+
+// grow_ov_safe grows an overview file so that there is a valid footer at the end of the file at every moment:
+//  1. commit Findex/Last to the current footer
+//  2. unmap and close
+//  3. write the new footer at the new end of the file (the file grows, the gap reads as zeros)
+//  4. zero the old footer, which is now inside the free body space
+//  5. reopen
+// a crash after 3 leaves old footer bytes after Findex: open_ov_once zeroes them.
+func grow_ov_safe(who string, ovfh *OVFH, pages int, blocksize string) (*OVFH, error) {
+	growby := blocksize_bytes(blocksize) * pages
+	if growby <= 0 {
+		return nil, fmt.Errorf("%s ERROR Grow_ov invalid pages=%d blocksize=%s fp='%s'", who, pages, blocksize, filepath.Base(ovfh.File_path))
+	}
+
+	// 1. commit the current state
+	if _, err := Update_Footer(who, ovfh, "Grow_ov"); err != nil {
+		return nil, err
+	}
+	oldsize := ovfh.Mmap_size
+
+	// 2. unmap and close
+	if err := handle_close_ov(who, ovfh, false, true, true); err != nil {
+		return nil, err
+	}
+
+	fh, err := os.OpenFile(ovfh.File_path, os.O_WRONLY, 0644)
+	if err != nil {
+		log.Printf("who='%s' ERROR Grow_ov open err='%v' fp='%s'", who, err, ovfh.File_path)
+		return nil, err
+	}
+	newsize := oldsize + growby
+
+	// 3. new footer at the new end
+	ovfh.Mmap_size = newsize // construct_footer reads bodyend/fend from Mmap_size
+	ovfh.Mmap_range = newsize - 1
+	ov_footer := construct_footer(who, ovfh, "Grow_ov()")
+	if _, err := fh.WriteAt([]byte(ov_footer), int64(newsize-OV_RESERVE_END)); err != nil {
+		fh.Close()
+		log.Printf("who='%s' ERROR Grow_ov write new footer err='%v' fp='%s'", who, err, ovfh.File_path)
+		return nil, err
+	}
+
+	// 4. zero the old footer
+	if _, err := fh.WriteAt(make([]byte, OV_RESERVE_END), int64(oldsize-OV_RESERVE_END)); err != nil {
+		fh.Close()
+		log.Printf("who='%s' ERROR Grow_ov zero old footer err='%v' fp='%s'", who, err, ovfh.File_path)
+		return nil, err
+	}
+	if err := fh.Close(); err != nil {
+		return nil, err
+	}
+
+	// 5. reopen
+	new_ovfh, err := handle_open_ov(who, ovfh.Hash, ovfh.File_path)
+	if err != nil || new_ovfh == nil || new_ovfh.Mmap_handle == nil {
+		log.Printf("who='%s' ERROR Grow_ov -> handle_open_ov err='%v' fp='%s'", who, err, ovfh.File_path)
+		if err == nil {
+			err = fmt.Errorf("%s ERROR Grow_ov reopen failed fp='%s'", who, filepath.Base(ovfh.File_path))
+		}
+		return nil, err
+	}
+	new_ovfh.Time_open = ovfh.Time_open
+	new_ovfh.Written = ovfh.Written
+	if DEBUG_OV {
+		log.Printf("who='%s' Grow_ov OK fp='%s' oldsize=%d newsize=%d Findex=%d", who, new_ovfh.File_path, oldsize, newsize, new_ovfh.Findex)
+	}
+	return new_ovfh, nil
+} // end func grow_ov_safe
+
+func blocksize_bytes(blocksize string) int {
+	switch blocksize {
+	case "1K":
+		return 1024
+	case "4K":
+		return 4 * 1024
+	case "128K":
+		return 128 * 1024
+	case "1M":
+		return 1024 * 1024
+	}
+	return 0
+} // end func blocksize_bytes
 
 func Update_Footer(who string, ovfh *OVFH, src string) (*OVFH, error) {
 	if ovfh.Findex == 0 || ovfh.Last == 0 || ovfh.Mmap_handle == nil {
@@ -2358,13 +2509,13 @@ func Scan_Overview(file string, group string, a uint64, b uint64, fields string,
 	}
 
 	fileScanner := bufio.NewScanner(readFile)
-	maxScan := 64*1024 // default NewScanner uses 64K buffer
-	if fields == "ReOrderOV" {
-		maxScan = 1024 * 1024
-	}
-	buf := make([]byte, maxScan)
+	// the NUL run of the free space is read as one line too
+	maxScan := 1024 * 1024
+	buf := make([]byte, 64*1024)
 	fileScanner.Buffer(buf, maxScan)
-	fileScanner.Split(bufio.ScanLines)
+	// split on LF only: bufio.ScanLines drops a trailing CR and the NewOVI offsets would drift
+	fileScanner.Split(scanLF)
+	var badlines int
 	var lc uint64 // linecounter
 	offsets := make(map[uint64]int64)
 	msgnums := []uint64{}
@@ -2388,34 +2539,27 @@ forfilescanner:
 			lc++
 			continue forfilescanner
 		}
-		if offset <= 0 && lc == 0 {
+		// offset of this line in the file, then advance to the next one
+		lineoff := offset
+		offset += int64(len(line)) + 1 // + 1 == int64(len(LF))
+		if lineoff <= 0 && lc == 0 {
 			// pass, ignore first line aka linecount 0: header from overview file
 			lc++
-			//if offset <OV_RESERVE_BEG
-			offset += OV_RESERVE_BEG
 			continue forfilescanner
 		}
 		lc++
 		ll := len(line)
-		if ll == 0 {
-			err = fmt.Errorf("break Scan_Overview lc=%d got empty line?!", lc)
-			log.Printf("%v", err)
-			return nil, err
-		}
-
-		if ll >= 0 && ll <= 3 {
-			if line == "" || line[0] == 0 || line[0] == '\x00' || line == "EOV" {
-				log.Printf("break Scan_Overview lc=%d", lc)
-				break forfilescanner
-			}
+		if ll == 0 || line[0] == 0 || line == "EOV" {
+			// free space (NUL run) or footer: end of data
+			break forfilescanner
 		}
 
 		datafields := strings.Split(line, "\t")
 		if len(datafields) < OVERVIEW_FIELDS {
-			err = fmt.Errorf("Error Scan_Overview lc=%d len(fields)=%d < OVERVIEW_FIELDS=%d file='%s' line='%s'", lc, len(datafields), OVERVIEW_FIELDS, filepath.Base(file), line)
-			log.Printf("%s", err)
-			//return nil, err
-			break forfilescanner
+			// skip a broken line, the lines after it are still valid
+			badlines++
+			log.Printf("Error Scan_Overview skip lc=%d len(fields)=%d < OVERVIEW_FIELDS=%d file='%s' line='%s'", lc, len(datafields), OVERVIEW_FIELDS, filepath.Base(file), short_str(line, 120))
+			continue forfilescanner
 		}
 
 		msgnum = utils.Str2uint64(datafields[0])
@@ -2425,14 +2569,13 @@ forfilescanner:
 				log.Printf("Invalid articlenum in overview '%s' line=%d", group, lc)
 				continue forfilescanner
 			}
-			err = fmt.Errorf("Error Scan_Overview lc=%d msgnum=0 file='%s'", lc, filepath.Base(file))
-			log.Printf("%s", err)
-			return nil, err
+			badlines++
+			log.Printf("Error Scan_Overview skip lc=%d msgnum=0 file='%s'", lc, filepath.Base(file))
+			continue forfilescanner
 		}
 
 		if fields == "NewOVI" {
-			offsets[msgnum] = offset
-			offset += int64(ll) + 1 // + 1 == int64(len(LF))
+			offsets[msgnum] = lineoff
 			msgnums = append(msgnums, msgnum)
 			continue forfilescanner
 		}
@@ -2448,8 +2591,9 @@ forfilescanner:
 				// expiration removed article from overview
 				continue forfilescanner
 			}
-			log.Printf("Error Scan_Overview file='%s' lc=%d field[4] err='!isvalidmsgid'", filepath.Base(file), lc)
-			break
+			badlines++
+			log.Printf("Error Scan_Overview skip file='%s' lc=%d field[4] err='!isvalidmsgid'", filepath.Base(file), lc)
+			continue forfilescanner
 		}
 
 		// view-filter TODO hardcoded
@@ -2562,7 +2706,10 @@ forfilescanner:
 				}
 			}
 		case "msgid":
-			lines = append(lines, datafields[4]) // catches message-id field
+			// only the exact number: a gap must not return the next article
+			if msgnum == a {
+				lines = append(lines, datafields[4]) // catches message-id field
+			}
 			//log.Printf("Scan_Overview returns a=%d b=%d file='%s' msgid='%s'", a, b, filepath.Base(file), datafields[4])
 			break forfilescanner
 		default:
@@ -2575,6 +2722,16 @@ forfilescanner:
 		}
 
 	} // end for filescanner
+
+	if serr := fileScanner.Err(); serr != nil {
+		// bufio.ErrTooLong: a NUL run of more than maxScan bytes, the data before it was read
+		if serr != bufio.ErrTooLong {
+			log.Printf("Error Scan_Overview fp='%s' scanner err='%v'", filepath.Base(file), serr)
+		}
+	}
+	if badlines > 0 {
+		log.Printf("WARN Scan_Overview fp='%s' skipped %d broken lines", filepath.Base(file), badlines)
+	}
 
 	if fields == "NewOVI" {
 		indexSize := 100 // gets offsets for every 100 overview entries
@@ -2600,6 +2757,20 @@ forfilescanner:
 
 	return lines, err
 } // end func Scan_Overview
+
+// scanLF is bufio.ScanLines without dropping a trailing CR
+func scanLF(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	if i := bytes.IndexByte(data, '\n'); i >= 0 {
+		return i + 1, data[0:i], nil
+	}
+	if atEOF {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
+} // end func scanLF
 
 func sendlineOV(line string, conn net.Conn, txb *int) error {
 	if line == "" {

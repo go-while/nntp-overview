@@ -19,11 +19,12 @@ func (km *Known_MessageIDs) ExpireThread() {
 		log.Print("Known_msgids.ExpireThread() start")
 		for {
 			deleted := 0
-			time.Sleep(time.Second*5)
+			time.Sleep(time.Second*60)
+			now := time.Now().Unix()
 			km.mux.Lock()
 			for msgidhash, expires := range km.v {
-				if expires > time.Now().Unix() {
-					go km.UnsetKnown(msgidhash)
+				if expires < now {
+					delete(km.v, msgidhash) // deleting while ranging is safe in go
 					deleted++
 				}
 			}

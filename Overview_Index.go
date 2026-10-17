@@ -398,6 +398,7 @@ func ReOrderOverview(file string, group string, doWritestamps bool, hashdb *sql.
 	var header string
 	var footer []string
 	var readfooter bool
+	var prevstamp int64 // timestamp of the previous line, used for lines with an unparseable Date
 	spamfilter := &SPAMFILTER{}
 readlines:
 	for i, line := range lines {
@@ -453,10 +454,11 @@ readlines:
 
 		unixepoch, err := ParseDate(datafields[3])
 		if err != nil {
-			log.Printf("IGNORE Error OV ReOrderOverview ParseDate file='%s' i=%d err='%v' unixepoch=%d msgid='%s' subj='%s' xref='%s'", filepath.Base(file), i, err, unixepoch, msgid, datafields[1], datafields[8])
-			//return false
-			continue readlines
+			// keep the line next to its neighbour instead of dropping it
+			log.Printf("WARN OV ReOrderOverview ParseDate file='%s' i=%d err='%v' msgid='%s' using previous stamp=%d", filepath.Base(file), i, err, msgid, prevstamp)
+			unixepoch = prevstamp
 		}
+		prevstamp = unixepoch
 		mapdata[unixepoch] = append(mapdata[unixepoch], line)
 
 		switch uniq_stamps[unixepoch] {
@@ -610,32 +612,26 @@ readlines:
 			return false
 		}
 		fmt.Fprintf(newfh, "%s\n", header)
-		for i, line := range writeLines {
+		for _, line := range writeLines {
 			if line == "" {
+				newfh.Close()
 				return false
 			}
-
-			fmt.Fprintf(newfh, "%s", line)
-			if i < len(writeLines)-1 {
-				fmt.Fprint(newfh, "\n") // do not append newline on last line!
-			}
+			fmt.Fprintf(newfh, "%s\n", line)
 		}
-		//fmt.Fprintf(newfh, "\x00")
 		err = newfh.Close()
 		if err != nil {
 			log.Printf("Error OV ReOrderOV newfh='%s' err='%v'", filepath.Base(newfile), err)
 			return false
 		}
 		log.Printf("wrote %d lines to newfh='%s'", len(writeLines), filepath.Base(newfile))
-		who := "ReOrderOV"
-		debug_rescan := false
-		var db *sql.DB = nil
-		retbool, last := Rescan_Overview(who, newfile, group, 999, debug_rescan, db, nil)
-		if retbool {
-			log.Printf("OK ReOrderOV Rescan_Overview newfh='%s' retbool=%t last=%d", filepath.Base(newfile), retbool, last)
+		// RepairOverview appends free space and a footer to the header + lines
+		rep, err := RepairOverview(newfile, RepairOpts{Fix: true})
+		if err == nil && (rep.Status == REPAIR_STATUS_REPAIRED || rep.Status == REPAIR_STATUS_OK) {
+			log.Printf("OK ReOrderOV newfh='%s' lines=%d last=%d", filepath.Base(newfile), rep.Lines, rep.LastNum)
 			return true
 		}
-		log.Printf("Error OV ReOrderOV Rescan_Overview newfh='%s' retbool=%t last=%d", filepath.Base(newfile), retbool, last)
+		log.Printf("Error OV ReOrderOV RepairOverview newfh='%s' err='%v' report: %s", filepath.Base(newfile), err, rep.String())
 
 	}
 	return false
