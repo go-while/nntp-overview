@@ -2793,7 +2793,7 @@ func GetMessageID(amsgid string, laxmid bool) (string, error) {
 			return msgid, nil
 		}
 	} else if !laxmid {
-		if strings.HasPrefix(msgid, "<") && strings.Contains("msgid", "@") && strings.HasSuffix(msgid, ">") {
+		if strings.HasPrefix(msgid, "<") && strings.Contains(msgid, "@") && strings.HasSuffix(msgid, ">") {
 			return msgid, nil
 		}
 	}
